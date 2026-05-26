@@ -1,0 +1,324 @@
+let gameState = 'MAIN';
+let video;
+let facemesh;
+let predictions = [];
+
+let player;
+let pigeons = [];
+let items = [];
+let splatters = []; // 화면에 묻은 똥 자국들을 저장할 배열
+let score = 0;
+
+// 웹캠 원본 해상도
+const WEBCAM_SOURCE_WIDTH = 640;
+const WEBCAM_SOURCE_HEIGHT = 480;
+
+function setup() {
+  createCanvas(windowWidth, windowHeight);
+  
+  // 1. 웹캠 세팅
+  video = createCapture(VIDEO);
+  video.size(WEBCAM_SOURCE_WIDTH, WEBCAM_SOURCE_HEIGHT); 
+  video.hide(); 
+
+  // 2. ml5 FaceMesh 초기화
+  facemesh = ml5.facemesh(video, modelReady);
+  facemesh.on('predict', results => {
+    predictions = results;
+  });
+
+  // 3. 객체 초기화
+  player = new Player();
+  
+  // 비둘기 3마리 생성
+  for (let i = 0; i < 3; i++) {
+    pigeons.push(new Pigeon(random(width), random(50, 150)));
+  }
+}
+
+function modelReady() {
+  console.log('FaceMesh Model Ready!');
+}
+
+function draw() {
+  background(240);
+  
+  switch(gameState) {
+    case 'MAIN':
+      drawMainScreen();
+      break;
+    case 'LOGIN':
+      drawLoginScreen();
+      break;
+    case 'CALIBRATE':
+      drawCalibrateScreen();
+      break;
+    case 'PLAYING':
+      playGame();
+      break;
+    case 'STAGE_CLEAR':
+      drawStageClearScreen();
+      break;
+    case 'LEADERBOARD':
+      drawLeaderboard();
+      break;
+  }
+}
+
+// ==========================================
+// 핵심 게임 플레이 로직
+// ==========================================
+function playGame() {
+  // 웹캠 영상 반전(거울 모드) 렌더링
+  push();
+  translate(width, 0);
+  scale(-1, 1);
+  image(video, 0, 0, width, height);
+  pop();
+
+  // FaceMesh 데이터 업데이트
+  if (predictions.length > 0) {
+    let keypoints = predictions[0].scaledMesh;
+    player.update(keypoints);
+  }
+  
+  // 비둘기 이동 및 그리기
+  for (let pigeon of pigeons) {
+    pigeon.update();
+    pigeon.show();
+  }
+
+  // 아이템 낙하 및 충돌 판정
+  for (let i = items.length - 1; i >= 0; i--) {
+    let item = items[i];
+    item.update();
+    item.show();
+
+    // 알(EGG) 충돌 판정: 입 위치
+    let dMouth = dist(item.x, item.y, player.mouthX, player.mouthY); 
+    
+    // ★수정됨: 똥(POOP) 충돌 판정을 머리/얼굴 전용 원형으로 변경
+    let dFace = dist(item.x, item.y, player.x, player.y);
+    let hitHead = dFace < 120; // 반경 120 (머리 전체 커버)
+
+    if (!item.isDead) {
+      if (item.type === 'EGG') {
+        if (dMouth < 60 && player.mouthOpen) {
+          score += 10;
+          item.isDead = true; 
+        }
+      } else if (item.type === 'POOP') {
+        // 얼굴(머리) 영역에 똥이 닿았을 때만 피격
+        if (hitHead) {
+          score -= 5;
+          item.isDead = true;
+          splatters.push({ x: item.x, y: item.y, size: random(100, 250) });
+        }
+      }
+    }
+
+    if (item.isDead) {
+      items.splice(i, 1);
+    }
+  }
+
+  player.show('PLAYING'); 
+
+  // 화면을 가리는 똥 자국들 그리기
+  for (let s of splatters) {
+    fill(101, 67, 33, 220); 
+    noStroke();
+    ellipse(s.x, s.y, s.size, s.size * 0.8);
+    ellipse(s.x + 20, s.y - 10, s.size * 0.6, s.size * 0.6);
+  }
+  
+  // 점수 UI
+  fill(255); 
+  stroke(0);
+  strokeWeight(4);
+  textAlign(LEFT, TOP);
+  textSize(40);
+  text(`Score: ${score}`, 20, 20);
+  noStroke(); 
+}
+
+
+// ==========================================
+// 클래스 정의 (Player, Pigeon, Item)
+// ==========================================
+class Player {
+  constructor() {
+    this.x = width / 2;
+    this.y = height / 2;
+    this.mouthX = width / 2;
+    this.mouthY = height / 2 + 20;
+    this.mouthOpen = false;
+  }
+
+  update(keypoints) {
+    this.x = map(keypoints[1][0], 0, WEBCAM_SOURCE_WIDTH, width, 0); 
+    this.y = map(keypoints[1][1], 0, WEBCAM_SOURCE_HEIGHT, 0, height);
+
+    let upperLip = keypoints[13];
+    let lowerLip = keypoints[14];
+    
+    let mouthRawX = (upperLip[0] + lowerLip[0]) / 2;
+    let mouthRawY = (upperLip[1] + lowerLip[1]) / 2;
+    this.mouthX = map(mouthRawX, 0, WEBCAM_SOURCE_WIDTH, width, 0);
+    this.mouthY = map(mouthRawY, 0, WEBCAM_SOURCE_HEIGHT, 0, height);
+
+    let mouthDist = dist(upperLip[0], upperLip[1], lowerLip[0], lowerLip[1]);
+    this.mouthOpen = mouthDist > 10; 
+  }
+
+  show(mode) {
+    if (mode === 'CALIBRATE') {
+      // ★수정됨: 얼굴/머리 충돌 영역 시각화 (노란색 원)
+      noFill(); 
+      stroke(255, 255, 0, 180); 
+      strokeWeight(4);
+      ellipse(this.x, this.y, 240, 240); // 반지름 120 -> 지름 240
+      
+      if (this.mouthOpen) {
+        fill(0, 255, 255); 
+        noStroke();
+        ellipse(this.mouthX, this.mouthY, 60, 60); 
+      } else {
+        noFill(); stroke(0, 255, 255, 150); strokeWeight(3); 
+        ellipse(this.mouthX, this.mouthY, 30, 30); 
+        noStroke();
+      }
+    } else {
+      // 게임 중에는 작고 눈에 덜 띄는 마커만 남김 (완전히 지우려면 아래 두 줄 주석 처리)
+      fill(0, 255, 255, 150); 
+      noStroke();
+      ellipse(this.mouthX, this.mouthY, 10, 10);
+    }
+  }
+}
+
+class Pigeon {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.speed = random(3, 6); 
+    this.direction = random() > 0.5 ? 1 : -1;
+  }
+
+  update() {
+    this.x += this.speed * this.direction;
+    if (this.x > width + 50) this.x = -50;
+    if (this.x < -50) this.x = width + 50;
+
+    if (random() < 0.015) { 
+      let type = random() > 0.7 ? 'EGG' : 'POOP'; 
+      items.push(new Item(this.x, this.y, type));
+    }
+  }
+
+  show() {
+    textSize(60); 
+    textAlign(CENTER, CENTER);
+    text("🕊️", this.x, this.y); 
+  }
+}
+
+class Item {
+  constructor(x, y, type) {
+    this.x = x;
+    this.y = y;
+    this.type = type;
+    this.speed = random(5, 9); 
+    this.isDead = false;
+  }
+
+  update() {
+    this.y += this.speed;
+    if (this.y > height + 50) {
+      this.isDead = true;
+    }
+  }
+
+  show() {
+    textSize(50); 
+    textAlign(CENTER, CENTER);
+    if (this.type === 'EGG') {
+      text("🥚", this.x, this.y);
+    } else {
+      text("💩", this.x, this.y);
+    }
+  }
+}
+
+
+// ==========================================
+// 화면 렌더링 및 이벤트 함수들
+// ==========================================
+function drawMainScreen() {
+  background(200, 250, 200); 
+  fill(0);
+  textAlign(CENTER, CENTER);
+  textSize(40);
+  text("입벌려! 비둘기 똥 들어간다~", width / 2, height / 2 - 50);
+  
+  textSize(20);
+  text("스테이지 모드를 시작하려면 화면을 클릭하세요", width / 2, height / 2 + 50);
+}
+
+function drawLoginScreen() {
+  background(255);
+  text("로그인 화면", width / 2, height / 2);
+}
+
+function drawCalibrateScreen() {
+  background(255);
+  
+  push();
+  translate(width, 0);
+  scale(-1, 1);
+  image(video, 0, 0, width, height);
+  pop();
+  
+  if (predictions.length > 0) {
+    let keypoints = predictions[0].scaledMesh;
+    player.update(keypoints);
+  }
+  
+  player.show('CALIBRATE'); 
+
+  fill(0);
+  stroke(255);
+  strokeWeight(4);
+  textAlign(CENTER, CENTER);
+  textSize(32);
+  text("노란 원 안에 얼굴이 쏙 들어가게 위치를 맞추세요!", width / 2, height / 2 - 50);
+  
+  textSize(24);
+  text("준비되었으면 화면을 클릭하여 게임을 시작합니다.", width / 2, height / 2 + 50);
+  noStroke();
+}
+
+function drawStageClearScreen() {
+  background(255);
+  text("스테이지 클리어!", width / 2, height / 2);
+}
+
+function drawLeaderboard() {
+  background(255);
+  text("순위표", width / 2, height / 2);
+}
+
+function mousePressed() {
+  if (gameState === 'MAIN') {
+    gameState = 'CALIBRATE';
+  } else if (gameState === 'CALIBRATE') {
+    gameState = 'PLAYING';
+    score = 0;
+    splatters = [];
+    items = [];
+  }
+}
+
+function windowResized() {
+  resizeCanvas(windowWidth, windowHeight);
+}
