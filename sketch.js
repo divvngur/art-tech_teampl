@@ -101,9 +101,9 @@ function playGame() {
     // 알(EGG) 충돌 판정: 입 위치
     let dMouth = dist(item.x, item.y, player.mouthX, player.mouthY); 
     
-    // ★수정됨: 똥(POOP) 충돌 판정을 머리/얼굴 전용 원형으로 변경
+    // ★수정됨: 똥(POOP) 충돌 판정 거리를 120에서 180으로 늘려 얼굴 전용 범위 확대
     let dFace = dist(item.x, item.y, player.x, player.y);
-    let hitHead = dFace < 120; // 반경 120 (머리 전체 커버)
+    let hitHead = dFace < 180; // 반경 180 (얼굴 전체 및 주변 넉넉히 커버)
 
     if (!item.isDead) {
       if (item.type === 'EGG') {
@@ -178,11 +178,11 @@ class Player {
 
   show(mode) {
     if (mode === 'CALIBRATE') {
-      // ★수정됨: 얼굴/머리 충돌 영역 시각화 (노란색 원)
+      // ★수정됨: 얼굴/머리 충돌 영역 시각화 원의 크기를 판정 범위에 맞게 늘림
       noFill(); 
       stroke(255, 255, 0, 180); 
       strokeWeight(4);
-      ellipse(this.x, this.y, 240, 240); // 반지름 120 -> 지름 240
+      ellipse(this.x, this.y, 360, 360); // 반지름 180 -> 지름 360
       
       if (this.mouthOpen) {
         fill(0, 255, 255); 
@@ -305,6 +305,7 @@ function drawCalibrateScreen() {
 
   fill(0);
   stroke(255);
+  weight = 4;
   strokeWeight(4);
   textAlign(CENTER, CENTER);
   textSize(32);
