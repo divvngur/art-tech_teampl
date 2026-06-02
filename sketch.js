@@ -73,12 +73,11 @@ function draw() {
 // 핵심 게임 플레이 로직
 // ==========================================
 function playGame() {
-  // 웹캠 영상 반전(거울 모드) 렌더링
-  push();
-  translate(width, 0);
-  scale(-1, 1);
-  image(video, 0, 0, width, height);
-  pop();
+  // ★수정됨: 배경색을 조금 더 선명한 파란색으로 변경 (연한 느낌 해소)
+  background(100, 180, 240); 
+
+  // 색상 꼬임 방지
+  noTint(); 
 
   // FaceMesh 데이터 업데이트
   if (predictions.length > 0) {
@@ -86,30 +85,33 @@ function playGame() {
     player.update(keypoints);
   }
   
+  // 캠 이미지를 다른 객체보다 먼저 그리기 (뒤로 가려지는 문제 해결)
+  player.show('PLAYING'); 
+
   // 비둘기 이동 및 그리기
   for (let pigeon of pigeons) {
     pigeon.update();
-    pigeon.show();
+    pigeon.show(); 
   }
 
   // 아이템 낙하 및 충돌 판정
   for (let i = items.length - 1; i >= 0; i--) {
     let item = items[i];
     item.update();
-    item.show();
+    item.show(); 
 
     // 알(EGG) 충돌 판정: 입 위치
     let dMouth = dist(item.x, item.y, player.mouthX, player.mouthY); 
     
-    // ★수정됨: 똥(POOP) 충돌 판정 거리를 120에서 180으로 늘려 얼굴 전용 범위 확대
+    // ★수정됨: 원 크기를 줄였으므로 똥(POOP) 충돌 반경도 180에서 130으로 축소
     let dFace = dist(item.x, item.y, player.x, player.y);
-    let hitHead = dFace < 180; // 반경 180 (얼굴 전체 및 주변 넉넉히 커버)
+    let hitHead = dFace < 130; 
 
     if (!item.isDead) {
       if (item.type === 'EGG') {
-        if (dMouth < 60 && player.mouthOpen) {
+        if (dMouth < 50 && player.mouthOpen) {
           score += 10;
-          item.isDead = true; 
+          item.isDead = true;   
         }
       } else if (item.type === 'POOP') {
         // 얼굴(머리) 영역에 똥이 닿았을 때만 피격
@@ -126,8 +128,6 @@ function playGame() {
     }
   }
 
-  player.show('PLAYING'); 
-
   // 화면을 가리는 똥 자국들 그리기
   for (let s of splatters) {
     fill(101, 67, 33, 220); 
@@ -136,10 +136,9 @@ function playGame() {
     ellipse(s.x + 20, s.y - 10, s.size * 0.6, s.size * 0.6);
   }
   
-  // 점수 UI
+  // 점수 UI 그리기
   fill(255); 
   stroke(0);
-  weight = 4;
   strokeWeight(4);
   textAlign(LEFT, TOP);
   textSize(40);
@@ -158,6 +157,14 @@ class Player {
     this.mouthX = width / 2;
     this.mouthY = height / 2 + 20;
     this.mouthOpen = false;
+    
+    // 얼굴 크롭용 변수
+    this.faceSrcX = 0;
+    this.faceSrcY = 0;
+    this.faceSize = 0; // 이제 가로/세로 동일한 크기의 정사각형으로 자릅니다.
+
+    // ★수정됨 (성능 최적화): 매 프레임 크기를 바꾸지 않고 고정된 크기(250x250)의 캔버스 버퍼 생성
+    this.maskBuffer = createGraphics(250, 250); 
   }
 
   update(keypoints) {
@@ -174,15 +181,40 @@ class Player {
 
     let mouthDist = dist(upperLip[0], upperLip[1], lowerLip[0], lowerLip[1]);
     this.mouthOpen = mouthDist > 10; 
+    
+    let minX = WEBCAM_SOURCE_WIDTH, minY = WEBCAM_SOURCE_HEIGHT;
+    let maxX = 0, maxY = 0;
+    
+    for (let i = 0; i < keypoints.length; i++) {
+      let px = keypoints[i][0];
+      let py = keypoints[i][1];
+      if (px < minX) minX = px;
+      if (px > maxX) maxX = px;
+      if (py < minY) minY = py;
+      if (py > maxY) maxY = py;
+    }
+    
+    // ★수정됨: 찌그러진 타원형 방지! 가로/세로 중 더 긴 쪽을 기준으로 정사각형(Square) 바운딩 박스 생성
+    let faceWidth = maxX - minX;
+    let faceHeight = maxY - minY;
+    let maxSide = max(faceWidth, faceHeight); 
+    
+    let padding = 40;
+    this.faceSize = maxSide + padding * 2;
+    
+    let centerX = (minX + maxX) / 2;
+    let centerY = (minY + maxY) / 2;
+    
+    this.faceSrcX = centerX - this.faceSize / 2;
+    this.faceSrcY = centerY - this.faceSize / 2 - 15; // 이마를 위해 영역을 살짝 위로 올림
   }
 
   show(mode) {
     if (mode === 'CALIBRATE') {
-      // ★수정됨: 얼굴/머리 충돌 영역 시각화 원의 크기를 판정 범위에 맞게 늘림
       noFill(); 
       stroke(255, 255, 0, 180); 
       strokeWeight(4);
-      ellipse(this.x, this.y, 360, 360); // 반지름 180 -> 지름 360
+      ellipse(this.x, this.y, 260, 260); // 캘리브레이션 원 크기도 약간 축소
       
       if (this.mouthOpen) {
         fill(0, 255, 255); 
@@ -194,7 +226,36 @@ class Player {
         noStroke();
       }
     } else {
-      // 게임 중에는 작고 눈에 덜 띄는 마커만 남김 (완전히 지우려면 아래 두 줄 주석 처리)
+      if (this.faceSize > 0) {
+        // 1. 고정된 마스크 버퍼 초기화
+        this.maskBuffer.clear();
+        this.maskBuffer.noStroke();
+        this.maskBuffer.fill(255); 
+
+        // 2. 마스크 영역 그리기 (크기를 90%로 줄여서 여백이 없는 깔끔한 정원 생성)
+        let circleSize = this.maskBuffer.width * 0.9;
+        this.maskBuffer.ellipse(this.maskBuffer.width / 2, this.maskBuffer.height / 2, circleSize, circleSize);
+
+        // 3. 비디오 이미지를 원 안쪽에만 덮어씌우기
+        this.maskBuffer.drawingContext.globalCompositeOperation = 'source-in';
+        this.maskBuffer.image(video, 0, 0, this.maskBuffer.width, this.maskBuffer.height, this.faceSrcX, this.faceSrcY, this.faceSize, this.faceSize);
+        this.maskBuffer.drawingContext.globalCompositeOperation = 'source-over';
+
+        // 4. 화면에 렌더링
+        push();
+        translate(this.x, this.y); 
+        scale(-1, 1); // 좌우 반전 (거울 모드)
+        imageMode(CENTER);
+        
+        // ★수정됨: 화면 크기에 맞춰 동적으로 커지던 얼굴 스케일을 조금 줄임
+        let displayScale = (height / WEBCAM_SOURCE_HEIGHT) * 0.85; 
+        let finalDisplaySize = this.faceSize * displayScale;
+        
+        image(this.maskBuffer, 0, 0, finalDisplaySize, finalDisplaySize); 
+        pop();
+      }
+
+      // 게임 중 입 위치 마커 (원치 않으면 주석 처리)
       fill(0, 255, 255, 150); 
       noStroke();
       ellipse(this.mouthX, this.mouthY, 10, 10);
@@ -305,7 +366,6 @@ function drawCalibrateScreen() {
 
   fill(0);
   stroke(255);
-  weight = 4;
   strokeWeight(4);
   textAlign(CENTER, CENTER);
   textSize(32);
