@@ -1,120 +1,71 @@
-/*
-let gameState = 'LOADING';
+let gameState = 'LOADING'; // 처음 시작을 로딩 상태로 설정하여 렉 방지
 let video;
 let facemesh;
 let predictions = [];
 
-// MediaPipe Selfie Segmentation (직접 사용)
-let selfieSegmentation;
-let segMaskCanvas; // 세그멘테이션 결과를 그릴 오프스크린 캔버스
-let segReady = false;
-
 let player;
 let pigeons = [];
 let items = [];
-let splatters = [];
+let splatters = []; // 화면에 묻은 똥 자국들을 저장할 배열
 let score = 0;
 
+// 웹캠 원본 해상도
 const WEBCAM_SOURCE_WIDTH = 640;
 const WEBCAM_SOURCE_HEIGHT = 480;
 
-let modelsLoaded = 0;
-
 function setup() {
   createCanvas(windowWidth, windowHeight);
+  
+  // 1. 웹캠 세팅
+  video = createCapture(VIDEO);
+  video.size(WEBCAM_SOURCE_WIDTH, WEBCAM_SOURCE_HEIGHT); 
+  video.hide(); 
 
-  video = createCapture(VIDEO, videoReady);
-  video.size(WEBCAM_SOURCE_WIDTH, WEBCAM_SOURCE_HEIGHT);
-  video.hide();
-
-  // FaceMesh 초기화
-  facemesh = ml5.facemesh(video, () => {
-    console.log('FaceMesh Ready!');
-    modelsLoaded++;
-    checkAllModelsReady();
-  });
+  // 2. ml5 FaceMesh 초기화
+  facemesh = ml5.facemesh(video, modelReady);
   facemesh.on('predict', results => {
     predictions = results;
   });
 
-  // 누끼용 오프스크린 캔버스 (세그멘테이션 마스크 합성용)
-  segMaskCanvas = document.createElement('canvas');
-  segMaskCanvas.width = WEBCAM_SOURCE_WIDTH;
-  segMaskCanvas.height = WEBCAM_SOURCE_HEIGHT;
-
-  // MediaPipe Selfie Segmentation 초기화
-  selfieSegmentation = new SelfieSegmentation({
-    locateFile: (file) => {
-      return `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`;
-    }
-  });
-  selfieSegmentation.setOptions({
-    modelSelection: 1, // 0: General, 1: Landscape (더 빠름)
-    selfieMode: false,
-  });
-  selfieSegmentation.onResults(onSegResults);
-
-  // 객체 초기화
+  // 3. 객체 초기화
   player = new Player();
+  
+  // 비둘기 3마리 생성
   for (let i = 0; i < 3; i++) {
     pigeons.push(new Pigeon(random(width), random(50, 150)));
   }
 }
 
-function videoReady() {
-  console.log('Video Ready!');
-  // 비디오 준비되면 세그멘테이션 루프 시작
-  sendFrameToSegmentation();
-}
-
-// 세그멘테이션에 프레임 전송 (비동기 루프)
-async function sendFrameToSegmentation() {
-  if (video.elt.readyState >= 2) {
-    await selfieSegmentation.send({ image: video.elt });
-  }
-  requestAnimationFrame(sendFrameToSegmentation);
-}
-
-// 세그멘테이션 결과 콜백
-function onSegResults(results) {
-  if (!segReady) {
-    segReady = true;
-    console.log('Selfie Segmentation Ready!');
-    modelsLoaded++;
-    checkAllModelsReady();
-  }
-
-  // 오프스크린 캔버스에 누끼 합성
-  let ctx = segMaskCanvas.getContext('2d');
-  ctx.save();
-  ctx.clearRect(0, 0, WEBCAM_SOURCE_WIDTH, WEBCAM_SOURCE_HEIGHT);
-
-  // 1. 세그멘테이션 마스크를 먼저 그림 (사람=흰색 영역)
-  ctx.drawImage(results.segmentationMask, 0, 0, WEBCAM_SOURCE_WIDTH, WEBCAM_SOURCE_HEIGHT);
-
-  // 2. source-in: 마스크 영역 안쪽에만 원본 비디오를 덮어씌움
-  ctx.globalCompositeOperation = 'source-in';
-  ctx.drawImage(results.image, 0, 0, WEBCAM_SOURCE_WIDTH, WEBCAM_SOURCE_HEIGHT);
-
-  ctx.restore();
-}
-
-function checkAllModelsReady() {
-  if (modelsLoaded >= 2) {
-    gameState = 'MAIN';
-  }
+function modelReady() {
+  console.log('FaceMesh Model Ready!');
+  gameState = 'MAIN'; // 모델 로딩이 완벽히 끝나면 메인 화면으로 이동
 }
 
 function draw() {
   background(240);
-  switch (gameState) {
-    case 'LOADING':  drawLoadingScreen(); break;
-    case 'MAIN':     drawMainScreen(); break;
-    case 'LOGIN':    drawLoginScreen(); break;
-    case 'CALIBRATE': drawCalibrateScreen(); break;
-    case 'PLAYING':  playGame(); break;
-    case 'STAGE_CLEAR': drawStageClearScreen(); break;
-    case 'LEADERBOARD': drawLeaderboard(); break;
+  
+  switch(gameState) {
+    case 'LOADING':
+      drawLoadingScreen();
+      break;
+    case 'MAIN':
+      drawMainScreen();
+      break;
+    case 'LOGIN':
+      drawLoginScreen();
+      break;
+    case 'CALIBRATE':
+      drawCalibrateScreen();
+      break;
+    case 'PLAYING':
+      playGame();
+      break;
+    case 'STAGE_CLEAR':
+      drawStageClearScreen();
+      break;
+    case 'LEADERBOARD':
+      drawLeaderboard();
+      break;
   }
 }
 
@@ -122,37 +73,48 @@ function draw() {
 // 핵심 게임 플레이 로직
 // ==========================================
 function playGame() {
-  background(100, 180, 240);
-  noTint();
+  // ★수정됨: 배경색을 조금 더 선명한 파란색으로 변경 (연한 느낌 해소)
+  background(100, 180, 240); 
 
+  // 색상 꼬임 방지
+  noTint(); 
+
+  // FaceMesh 데이터 업데이트
   if (predictions.length > 0) {
     let keypoints = predictions[0].scaledMesh;
     player.update(keypoints);
   }
+  
+  // 캠 이미지를 다른 객체보다 먼저 그리기 (뒤로 가려지는 문제 해결)
+  player.show('PLAYING'); 
 
-  player.show('PLAYING');
-
+  // 비둘기 이동 및 그리기
   for (let pigeon of pigeons) {
     pigeon.update();
-    pigeon.show();
+    pigeon.show(); 
   }
 
+  // 아이템 낙하 및 충돌 판정
   for (let i = items.length - 1; i >= 0; i--) {
     let item = items[i];
     item.update();
-    item.show();
+    item.show(); 
 
-    let dMouth = dist(item.x, item.y, player.mouthX, player.mouthY);
+    // 알(EGG) 충돌 판정: 입 위치
+    let dMouth = dist(item.x, item.y, player.mouthX, player.mouthY); 
+    
+    // ★수정됨: 원 크기를 줄였으므로 똥(POOP) 충돌 반경도 180에서 130으로 축소
     let dFace = dist(item.x, item.y, player.x, player.y);
-    let hitHead = dFace < 130;
+    let hitHead = dFace < 130; 
 
     if (!item.isDead) {
       if (item.type === 'EGG') {
         if (dMouth < 50 && player.mouthOpen) {
           score += 10;
-          item.isDead = true;
+          item.isDead = true;   
         }
       } else if (item.type === 'POOP') {
+        // 얼굴(머리) 영역에 똥이 닿았을 때만 피격
         if (hitHead) {
           score -= 5;
           item.isDead = true;
@@ -161,28 +123,32 @@ function playGame() {
       }
     }
 
-    if (item.isDead) items.splice(i, 1);
+    if (item.isDead) {
+      items.splice(i, 1);
+    }
   }
 
+  // 화면을 가리는 똥 자국들 그리기
   for (let s of splatters) {
-    fill(101, 67, 33, 220);
+    fill(101, 67, 33, 220); 
     noStroke();
     ellipse(s.x, s.y, s.size, s.size * 0.8);
     ellipse(s.x + 20, s.y - 10, s.size * 0.6, s.size * 0.6);
   }
-
-  fill(255);
+  
+  // 점수 UI 그리기
+  fill(255); 
   stroke(0);
   strokeWeight(4);
   textAlign(LEFT, TOP);
   textSize(40);
   text(`Score: ${score}`, 20, 20);
-  noStroke();
+  noStroke(); 
 }
 
 
 // ==========================================
-// Player 클래스 - 누끼 합성 방식
+// 클래스 정의 (Player, Pigeon, Item)
 // ==========================================
 class Player {
   constructor() {
@@ -191,102 +157,135 @@ class Player {
     this.mouthX = width / 2;
     this.mouthY = height / 2 + 20;
     this.mouthOpen = false;
+    
+    // 얼굴 크롭용 변수
     this.faceSrcX = 0;
     this.faceSrcY = 0;
-    this.faceSize = 0;
+    this.faceSize = 0; // 이제 가로/세로 동일한 크기의 정사각형으로 자릅니다.
+
+    // ★수정됨 (성능 최적화): 매 프레임 크기를 바꾸지 않고 고정된 크기(250x250)의 캔버스 버퍼 생성
+    this.maskBuffer = createGraphics(250, 250); 
   }
 
   update(keypoints) {
-    this.x = map(keypoints[1][0], 0, WEBCAM_SOURCE_WIDTH, width, 0);
+    this.x = map(keypoints[1][0], 0, WEBCAM_SOURCE_WIDTH, width, 0); 
     this.y = map(keypoints[1][1], 0, WEBCAM_SOURCE_HEIGHT, 0, height);
 
     let upperLip = keypoints[13];
     let lowerLip = keypoints[14];
+    
     let mouthRawX = (upperLip[0] + lowerLip[0]) / 2;
     let mouthRawY = (upperLip[1] + lowerLip[1]) / 2;
     this.mouthX = map(mouthRawX, 0, WEBCAM_SOURCE_WIDTH, width, 0);
     this.mouthY = map(mouthRawY, 0, WEBCAM_SOURCE_HEIGHT, 0, height);
 
     let mouthDist = dist(upperLip[0], upperLip[1], lowerLip[0], lowerLip[1]);
-    this.mouthOpen = mouthDist > 10;
-
+    this.mouthOpen = mouthDist > 10; 
+    
     let minX = WEBCAM_SOURCE_WIDTH, minY = WEBCAM_SOURCE_HEIGHT;
     let maxX = 0, maxY = 0;
+    
     for (let i = 0; i < keypoints.length; i++) {
-      let px = keypoints[i][0], py = keypoints[i][1];
+      let px = keypoints[i][0];
+      let py = keypoints[i][1];
       if (px < minX) minX = px;
       if (px > maxX) maxX = px;
       if (py < minY) minY = py;
       if (py > maxY) maxY = py;
     }
-    let maxSide = max(maxX - minX, maxY - minY);
-    this.faceSize = maxSide + 80;
-    this.faceSrcX = (minX + maxX) / 2 - this.faceSize / 2;
-    this.faceSrcY = (minY + maxY) / 2 - this.faceSize / 2 - 15;
+    
+    // ★수정됨: 찌그러진 타원형 방지! 가로/세로 중 더 긴 쪽을 기준으로 정사각형(Square) 바운딩 박스 생성
+    let faceWidth = maxX - minX;
+    let faceHeight = maxY - minY;
+    let maxSide = max(faceWidth, faceHeight); 
+    
+    let padding = 40;
+    this.faceSize = maxSide + padding * 2;
+    
+    let centerX = (minX + maxX) / 2;
+    let centerY = (minY + maxY) / 2;
+    
+    this.faceSrcX = centerX - this.faceSize / 2;
+    this.faceSrcY = centerY - this.faceSize / 2 - 15; // 이마를 위해 영역을 살짝 위로 올림
   }
 
   show(mode) {
     if (mode === 'CALIBRATE') {
-      // 캘리브레이션: 누끼 미리보기
-      if (segReady) {
-        this._drawSegmented();
-      }
-
+      noFill(); 
+      stroke(255, 255, 0, 180); 
+      strokeWeight(4);
+      ellipse(this.x, this.y, 260, 260); // 캘리브레이션 원 크기도 약간 축소
+      
       if (this.mouthOpen) {
-        fill(0, 255, 255);
+        fill(0, 255, 255); 
         noStroke();
-        ellipse(this.mouthX, this.mouthY, 60, 60);
+        ellipse(this.mouthX, this.mouthY, 60, 60); 
       } else {
-        noFill(); stroke(0, 255, 255, 150); strokeWeight(3);
-        ellipse(this.mouthX, this.mouthY, 30, 30);
+        noFill(); stroke(0, 255, 255, 150); strokeWeight(3); 
+        ellipse(this.mouthX, this.mouthY, 30, 30); 
         noStroke();
       }
     } else {
-      // 게임 플레이: 누끼 합성
-      if (segReady) {
-        this._drawSegmented();
+      if (this.faceSize > 0) {
+        // 1. 고정된 마스크 버퍼 초기화
+        this.maskBuffer.clear();
+        this.maskBuffer.noStroke();
+        this.maskBuffer.fill(255); 
+
+        // 2. 마스크 영역 그리기 (크기를 90%로 줄여서 여백이 없는 깔끔한 정원 생성)
+        let circleSize = this.maskBuffer.width * 0.9;
+        this.maskBuffer.ellipse(this.maskBuffer.width / 2, this.maskBuffer.height / 2, circleSize, circleSize);
+
+        // 3. 비디오 이미지를 원 안쪽에만 덮어씌우기
+        this.maskBuffer.drawingContext.globalCompositeOperation = 'source-in';
+        this.maskBuffer.image(video, 0, 0, this.maskBuffer.width, this.maskBuffer.height, this.faceSrcX, this.faceSrcY, this.faceSize, this.faceSize);
+        this.maskBuffer.drawingContext.globalCompositeOperation = 'source-over';
+
+        // 4. 화면에 렌더링
+        push();
+        translate(this.x, this.y); 
+        scale(-1, 1); // 좌우 반전 (거울 모드)
+        imageMode(CENTER);
+        
+        // ★수정됨: 화면 크기에 맞춰 동적으로 커지던 얼굴 스케일을 조금 줄임
+        let displayScale = (height / WEBCAM_SOURCE_HEIGHT) * 0.85; 
+        let finalDisplaySize = this.faceSize * displayScale;
+        
+        image(this.maskBuffer, 0, 0, finalDisplaySize, finalDisplaySize); 
+        pop();
       }
 
-      fill(0, 255, 255, 150);
+      // 게임 중 입 위치 마커 (원치 않으면 주석 처리)
+      fill(0, 255, 255, 150); 
       noStroke();
       ellipse(this.mouthX, this.mouthY, 10, 10);
     }
   }
-
-  // ★핵심: segMaskCanvas (이미 배경 제거된 이미지)를 화면에 그리기
-  _drawSegmented() {
-    push();
-    translate(width, 0);
-    scale(-1, 1); // 거울 모드
-    drawingContext.drawImage(segMaskCanvas, 0, 0, width, height);
-    pop();
-  }
 }
 
-
-// ==========================================
-// Pigeon, Item 클래스 (변경 없음)
-// ==========================================
 class Pigeon {
   constructor(x, y) {
     this.x = x;
     this.y = y;
-    this.speed = random(3, 6);
+    this.speed = random(3, 6); 
     this.direction = random() > 0.5 ? 1 : -1;
   }
+
   update() {
     this.x += this.speed * this.direction;
     if (this.x > width + 50) this.x = -50;
     if (this.x < -50) this.x = width + 50;
-    if (random() < 0.015) {
-      let type = random() > 0.7 ? 'EGG' : 'POOP';
+
+    if (random() < 0.015) { 
+      let type = random() > 0.7 ? 'EGG' : 'POOP'; 
       items.push(new Item(this.x, this.y, type));
     }
   }
+
   show() {
-    textSize(60);
+    textSize(60); 
     textAlign(CENTER, CENTER);
-    text("🕊️", this.x, this.y);
+    text("🕊️", this.x, this.y); 
   }
 }
 
@@ -295,17 +294,25 @@ class Item {
     this.x = x;
     this.y = y;
     this.type = type;
-    this.speed = random(5, 9);
+    this.speed = random(5, 9); 
     this.isDead = false;
   }
+
   update() {
     this.y += this.speed;
-    if (this.y > height + 50) this.isDead = true;
+    if (this.y > height + 50) {
+      this.isDead = true;
+    }
   }
+
   show() {
-    textSize(50);
+    textSize(50); 
     textAlign(CENTER, CENTER);
-    text(this.type === 'EGG' ? "🥚" : "💩", this.x, this.y);
+    if (this.type === 'EGG') {
+      text("🥚", this.x, this.y);
+    } else {
+      text("💩", this.x, this.y);
+    }
   }
 }
 
@@ -319,20 +326,19 @@ function drawLoadingScreen() {
   textAlign(CENTER, CENTER);
   textSize(32);
   text("AI 카메라 시스템 로딩 중...", width / 2, height / 2 - 20);
+  
   textSize(18);
   fill(150);
-  text("FaceMesh + 누끼 모델 로딩 중... 잠시만 기다려주세요!", width / 2, height / 2 + 30);
-  fill(100, 255, 100);
-  textSize(16);
-  text(`(${modelsLoaded}/2 모델 로드 완료)`, width / 2, height / 2 + 60);
+  text("잠시만 기다려주세요! (웹캠 권한 허용 필요)", width / 2, height / 2 + 30);
 }
 
 function drawMainScreen() {
-  background(200, 250, 200);
+  background(200, 250, 200); 
   fill(0);
   textAlign(CENTER, CENTER);
   textSize(40);
   text("입벌려! 비둘기 똥 들어간다~", width / 2, height / 2 - 50);
+  
   textSize(20);
   text("스테이지 모드를 시작하려면 화면을 클릭하세요", width / 2, height / 2 + 50);
 }
@@ -343,32 +349,30 @@ function drawLoginScreen() {
 }
 
 function drawCalibrateScreen() {
-  background(50);
-
-  // 배경에 원본 웹캠 (반투명)
+  background(255);
+  
   push();
-  tint(255, 80);
   translate(width, 0);
   scale(-1, 1);
   image(video, 0, 0, width, height);
   pop();
-  noTint();
-
+  
   if (predictions.length > 0) {
     let keypoints = predictions[0].scaledMesh;
     player.update(keypoints);
   }
+  
+  player.show('CALIBRATE'); 
 
-  player.show('CALIBRATE');
-
-  fill(255);
-  stroke(0);
+  fill(0);
+  stroke(255);
   strokeWeight(4);
   textAlign(CENTER, CENTER);
   textSize(32);
-  text("누끼가 잘 잡히는지 확인하세요!", width / 2, height - 120);
+  text("노란 원 안에 얼굴이 쏙 들어가게 위치를 맞추세요!", width / 2, height / 2 - 50);
+  
   textSize(24);
-  text("준비되었으면 화면을 클릭하여 게임을 시작합니다.", width / 2, height - 70);
+  text("준비되었으면 화면을 클릭하여 게임을 시작합니다.", width / 2, height / 2 + 50);
   noStroke();
 }
 
@@ -396,4 +400,3 @@ function mousePressed() {
 function windowResized() {
   resizeCanvas(windowWidth, windowHeight);
 }
-*/
