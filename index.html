@@ -1,16 +1,31 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
+
   <title>입벌려! 비둘기 똥 들어간다~</title>
-  
+
   <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
 
   <script src="https://unpkg.com/ml5@0.12.2/dist/ml5.min.js"></script>
 
+  <!-- MediaPipe Selfie Segmentation -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js"></script>
+
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: black;
+    }
+
+    canvas {
+      display: block;
+    }
+  </style>
 </head>
+
 <body>
-  
-  <script src="sketch.js"></script>
+  <script src="hd_facem.js"></script>
 </body>
 </html>
