@@ -52,8 +52,38 @@ canvas { display:block; position:absolute; top:0; left:0; }
 
 .title-stack { animation:slideUp .5s ease both; }
 .big-icon { font-size:clamp(64px,12vw,112px); filter:drop-shadow(0 18px 24px rgba(15,23,42,.25)); animation:bounceSlow 2.4s ease-in-out infinite; }
-.hero-title { font-family:'Jua'; font-size:clamp(48px,9vw,86px); font-weight:900; line-height:1; letter-spacing:0; color:white; text-shadow:0 8px 22px rgba(15,23,42,.28); }
-.gradient-text { color:transparent; background:linear-gradient(90deg,#f97316,#ef4444,#ec4899); -webkit-background-clip:text; background-clip:text; }
+.hero-title{
+  font-family:'Jua';
+  font-size:clamp(48px,9vw,86px);
+  font-weight:900;
+  color:white;
+
+  text-shadow:
+    0 3px 0 rgba(15,23,42,.25),
+    0 6px 0 rgba(15,23,42,.18),
+    0 10px 20px rgba(15,23,42,.20);
+}
+
+.gradient-text{
+  color:transparent;
+  background:linear-gradient(
+    90deg,
+    #f97316,
+    #ef4444,
+    #ec4899
+  );
+
+  -webkit-background-clip:text;
+  background-clip:text;
+
+  /* hero-title 그림자 무효화 */
+  text-shadow:none;
+
+  filter:
+    drop-shadow(0 3px 0 rgba(15,23,42,.25))
+    drop-shadow(0 6px 0px rgba(15,23,42,.18))
+    drop-shadow(0 10px 20px rgba(15,23,42,.20));
+}
 .section-title { font-family:'Jua'; font-size:clamp(36px,7vw,72px); line-height:1; font-weight:900; color:white; text-shadow:0 8px 22px rgba(15,23,42,.28); }
 .support-copy { margin-top:12px; font-size:clamp(17px,2.4vw,24px); color:rgba(255,255,255,.94); font-weight:800; text-shadow:0 3px 12px rgba(15,23,42,.25); }
 
@@ -169,8 +199,22 @@ canvas { display:block; position:absolute; top:0; left:0; }
 #game-hud { position:absolute; top:18px; left:18px; right:18px; z-index:100; display:flex; align-items:center; justify-content:space-between; pointer-events:none; }
 #hud-hearts { font-size:34px; letter-spacing:5px; text-shadow:0 4px 12px rgba(15,23,42,.28); }
 #hud-center { padding:10px 22px; border-radius:999px; background:rgba(255,255,255,.9); color:#1f2937; box-shadow:0 12px 28px rgba(15,23,42,.17); font-size:21px; font-weight:900; }
-#hud-right { display:flex; gap:8px; pointer-events:auto; }
-#hud-right button { padding:10px 14px; border-radius:999px; color:#1f2937; background:rgba(255,255,255,.92); box-shadow:0 10px 22px rgba(15,23,42,.16); font-weight:900; }
+#hud-right { display:flex; gap:10px; pointer-events:auto; }
+#hud-right button {
+  width:clamp(42px,4.4vw,54px);
+  height:clamp(38px,4vw,48px);
+  padding:0;
+  border-radius:12px;
+  color:#1f2937;
+  background:rgba(255,255,255,.88);
+  border:1px solid rgba(255,255,255,.72);
+  box-shadow:0 10px 24px rgba(15,23,42,.16);
+  font-size:clamp(18px,2.1vw,24px);
+  font-weight:900;
+  line-height:1;
+}
+#hud-right button:hover { background:white; transform:translateY(-1px); }
+#btn-quit { background:rgba(254,242,242,.92) !important; color:#dc2626 !important; }
 #pause-overlay { position:absolute; inset:0; z-index:200; display:flex; align-items:center; justify-content:center; background:rgba(15,23,42,.55); backdrop-filter:blur(8px); }
 .pause-box { background:white; border-radius:28px; padding:44px; min-width:320px; text-align:center; box-shadow:var(--shadow); display:flex; flex-direction:column; gap:14px; }
 .pause-title { font-family:'Jua'; font-size:52px; color:#1f2937; margin-bottom:8px; }
@@ -239,7 +283,8 @@ canvas { display:block; position:absolute; top:0; left:0; }
   #game-hud { top:12px; left:12px; right:12px; gap:8px; align-items:flex-start; }
   #hud-hearts { font-size:25px; letter-spacing:1px; }
   #hud-center { font-size:16px; padding:8px 12px; }
-  #hud-right { flex-direction:column; }
+  #hud-right { flex-direction:column; gap:7px; }
+  #hud-right button { width:38px; height:34px; border-radius:10px; font-size:17px; }
   .podium-card.rank-1, .podium-card.rank-3 { transform:none; }
   .result-actions-row, .modal-actions { flex-direction:column; }
 }

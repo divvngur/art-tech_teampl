@@ -1,5 +1,5 @@
 window.ResultScreen = {
-  init() {
+  async init() {
     const screen = document.getElementById('result-screen');
     const result = APP.lastResult || {
       cleared: false,
@@ -7,6 +7,19 @@ window.ResultScreen = {
       survivalTime: 0,
       mode: APP.mode,
     };
+    if (
+      result.mode === 'competitive' &&
+      APP.currentUser &&
+      !result._saved
+    ) {
+      result._saved = true;
+
+      await saveScoreToFirebase({
+        displayName: APP.displayName || 'Guest',
+        score: result.score || 0,
+        survivalTime: result.survivalTime || 0,
+      });
+    }
     const isCleared = Boolean(result.cleared);
     const bgClass = isCleared ? 'bg-sky' : 'bg-dark';
     const title = isCleared ? 'STAGE CLEAR!' : (result.quit ? 'GAME ENDED' : 'GAME OVER');
@@ -21,7 +34,7 @@ window.ResultScreen = {
           <h1 class="result-title gradient-text">${title}</h1>
           <div class="result-stat">
             <span>🥚</span>
-            <span>${result.score || 0}개</span>
+            <span>${result.score || 0}점</span>
           </div>
           ${result.mode === 'competitive' ? `
             <div style="font-size:24px; font-weight:900; margin-bottom:22px;">
@@ -59,8 +72,8 @@ window.ResultScreen = {
 
     const startCurrentMode = () => {
       LoadingScreen.init(() => {
-        showScreen('camera-screen');
-        CameraSetupScreen.init();
+        showScreen('game-screen');
+        GameScreen.init();
       });
       showScreen('loading-screen');
     };

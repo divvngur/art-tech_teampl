@@ -14,7 +14,7 @@ window.LoginScreen = {
           <div style="text-align:center; margin-bottom:24px;">
             <div class="big-icon" style="font-size:56px;">🕊️</div>
             <h1 style="font-family:'Jua'; font-size:42px; margin-top:6px;">로그인</h1>
-            <p class="hint" style="font-size:15px;">서버 연동 전까지 닉네임으로 로컬 로그인합니다.</p>
+            <p class="hint" style="font-size:15px;">Google로 로그인 후 입력한 닉네임이 순위표에 표시됩니다.</p>
           </div>
 
           <div class="form-section">
@@ -30,7 +30,7 @@ window.LoginScreen = {
             <button id="login-back-btn" class="btn btn-wide btn-muted">뒤로가기</button>
           </div>
 
-          <p class="hint" style="text-align:center; margin-top:18px;">현재는 실제 Google 인증 대신 로컬 닉네임 로그인을 사용합니다.</p>
+          <!-- <p class="hint" style="text-align:center; margin-top:18px;">현재는 실제 Google 인증 대신 로컬 닉네임 로그인을 사용합니다.</p> -->
         </main>
       </div>
     `;

@@ -95,8 +95,8 @@ window.MainScreen = {
         showScreen('stage-select-screen');
       } else {
         LoadingScreen.init(() => {
-          showScreen('camera-screen');
-          CameraSetupScreen.init();
+          showScreen('game-screen');
+          GameScreen.init();
         });
         showScreen('loading-screen');
       }

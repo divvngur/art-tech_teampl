@@ -1,7 +1,7 @@
 window.LeaderboardScreen = {
-  init() {
+  async init() {
     const screen = document.getElementById('leaderboard-screen');
-    const docs = MockLeaderboard.all();
+    const docs = await getLeaderboard();
     const topThree = docs.slice(0, 3);
     const others = docs.slice(3);
 
@@ -11,8 +11,10 @@ window.LeaderboardScreen = {
         <div style="font-family:'Jua'; font-size:34px;">${rank}위</div>
         <div class="rank-name">${item ? item.displayName : '-'}</div>
         <div class="rank-time">
-          <div>${formatTime(item ? item.survivalTime : 0)}</div>
-          <div style="font-size:14px; margin-top:4px;">${item ? item.score : 0}점 🥚</div>
+          <div>${item ? item.score : 0}점 🥚</div>
+          <div style="font-size:14px; margin-top:4px;">
+            ⏱ ${formatTime(item ? item.survivalTime : 0)}
+          </div>
         </div>
       </div>
     `;
@@ -21,9 +23,19 @@ window.LeaderboardScreen = {
       <div class="lb-row ${APP.displayName === d.displayName ? 'me' : ''}">
         <div class="lb-rank">#${i + 4}</div>
         <div class="lb-name">${d.displayName}</div>
+
         <div class="lb-time">
-          <div>${formatTime(d.survivalTime)}</div>
-          <div style="font-size:12px; color:#64748b;">${d.score}점 🥚</div>
+          
+          <!-- 점수 먼저 (강조) -->
+          <div style="font-size:14px; font-weight:900;">
+            ${d.score}점 🥚
+          </div>
+
+          <!-- 시간은 보조 -->
+          <div style="font-size:12px; color:#64748b; margin-top:2px;">
+            ⏱ ${formatTime(d.survivalTime)}
+          </div>
+
         </div>
       </div>
     `).join('');
@@ -36,9 +48,14 @@ window.LeaderboardScreen = {
           <div class="bg-cloud" style="bottom:12%; left:32%; animation-delay:2s;">⭐</div>
         </div>
         <main class="rank-wrap">
-          <div class="title-stack">
-            <h1 class="section-title" style="color:#fde68a;">🏆 순위표 🏆</h1>
-            <p class="support-copy">경쟁 모드 최고 기록</p>
+          <div class="title-stack" style="width:100%; text-align:center;">
+            <h1 class="section-title" style="color:#fde68a;">
+              🏆 순위표 🏆
+            </h1>
+
+            <p class="support-copy">
+              경쟁 모드 최고 기록
+            </p>
           </div>
 
           <section class="podium">

@@ -63,8 +63,8 @@ window.StageSelectScreen = {
         document.getElementById('stage-start').onclick = () => {
           APP.selectedStage = stageNum;
           LoadingScreen.init(() => {
-            showScreen('camera-screen');
-            CameraSetupScreen.init();
+            showScreen('game-screen');
+            GameScreen.init();
           });
           showScreen('loading-screen');
         };

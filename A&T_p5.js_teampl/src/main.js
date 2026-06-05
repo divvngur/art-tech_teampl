@@ -12,11 +12,62 @@ window.APP = {
   paused:false,
 };
 
+// TODO: Firebase 콘솔에서 복사한 웹 앱 config로 바꿔주세요.
+const firebaseConfig = {
+  apiKey: "AIzaSyDkyVCuogtpjKY_BnAbaS1QG_CeDyBMrOc",
+  authDomain: "pigeon-attack-game.firebaseapp.com",
+  projectId: "pigeon-attack-game",
+  storageBucket: "pigeon-attack-game.firebasestorage.app",
+  messagingSenderId: "865578195094",
+  appId: "1:865578195094:web:5ef6c87bbe69f17f90cab7",
+  measurementId: "G-PKZ7KR74GS"
+};
+
 const LOCAL_USER_KEY = 'pigeonAttackUser';
 const LOCAL_LEADERBOARD_KEY = 'pigeonAttackLeaderboard';
 
+window.firebaseReady = false;
+
+window.initFirebase = function() {
+  if (window.firebaseReady) return;
+  if (!window.firebase || !firebase.auth) return;
+
+  firebase.initializeApp(firebaseConfig);
+  window.firebaseReady = true;
+
+  firebase.auth().onAuthStateChanged(async (user) => {
+    if (!user) {
+      APP.currentUser = null;
+      APP.displayName = null;
+      if (typeof window.updateMainLoginBtn === 'function') window.updateMainLoginBtn();
+      return;
+    }
+
+    const displayName = user.displayName || user.email?.split('@')[0] || 'Player';
+    APP.currentUser = {
+      uid: user.uid,
+      email: user.email,
+      displayName,
+      photoURL: user.photoURL,
+    };
+    APP.displayName = displayName;
+    if (typeof window.updateMainLoginBtn === 'function') window.updateMainLoginBtn();
+  });
+};
+
+window.ensureFirebase = function() {
+  if (!window.firebaseReady && window.firebase && firebase.auth) {
+    window.initFirebase();
+  }
+};
+
 window.MockAuth = {
   load() {
+    window.ensureFirebase();
+    if (window.firebaseReady) {
+      return;
+    }
+
     try {
       const user = JSON.parse(localStorage.getItem(LOCAL_USER_KEY) || 'null');
       if (user) {
@@ -27,19 +78,47 @@ window.MockAuth = {
       console.warn('local auth load failed', e);
     }
   },
-  signIn(displayName) {
+  async signIn(displayName) {
+    const nickname = displayName?.trim() || '';
+    window.ensureFirebase();
+
+    if (window.firebaseReady) {
+      const provider = new firebase.auth.GoogleAuthProvider();
+      const result = await firebase.auth().signInWithPopup(provider);
+      const user = result.user;
+      const name = nickname || user.displayName || user.email?.split('@')[0] || 'Player';
+      APP.currentUser = {
+        uid: user.uid,
+        email: user.email,
+        displayName: name,
+        photoURL: user.photoURL,
+      };
+      APP.displayName = name;
+      if (typeof window.updateMainLoginBtn === 'function') window.updateMainLoginBtn();
+      return APP.currentUser;
+    }
+
     const user = {
       uid: `local_${Date.now()}`,
-      displayName,
+      displayName: nickname || 'Guest',
     };
     localStorage.setItem(LOCAL_USER_KEY, JSON.stringify(user));
     APP.currentUser = user;
-    APP.displayName = displayName;
+    APP.displayName = user.displayName;
     if (typeof window.updateMainLoginBtn === 'function') window.updateMainLoginBtn();
     return user;
   },
-  signOut() {
-    localStorage.removeItem(LOCAL_USER_KEY);
+  async signOut() {
+    window.ensureFirebase();
+    if (window.firebaseReady) {
+      try {
+        await firebase.auth().signOut();
+      } catch (e) {
+        console.warn('Firebase sign out failed', e);
+      }
+    } else {
+      localStorage.removeItem(LOCAL_USER_KEY);
+    }
     APP.currentUser = null;
     APP.displayName = null;
     if (typeof window.updateMainLoginBtn === 'function') window.updateMainLoginBtn();
@@ -47,36 +126,88 @@ window.MockAuth = {
 };
 
 window.MockLeaderboard = {
-  defaults: [
-    { displayName:'김철수', survivalTime:456000, score:234, timestamp:1 },
-    { displayName:'이영희', survivalTime:432000, score:198, timestamp:2 },
-    { displayName:'박민수', survivalTime:398000, score:176, timestamp:3 },
-    { displayName:'최지원', survivalTime:345000, score:145, timestamp:4 },
-    { displayName:'정수진', survivalTime:321000, score:132, timestamp:5 },
-    { displayName:'강동현', survivalTime:298000, score:121, timestamp:6 },
-    { displayName:'윤서아', survivalTime:276000, score:109, timestamp:7 },
-    { displayName:'임태양', survivalTime:254000, score:98, timestamp:8 },
-  ],
-  all() {
-    let records = [];
-    try {
-      records = JSON.parse(localStorage.getItem(LOCAL_LEADERBOARD_KEY) || '[]');
-    } catch(e) {
-      console.warn('local leaderboard load failed', e);
-    }
-    return [...records, ...this.defaults]
-      .sort((a, b) => (b.survivalTime || 0) - (a.survivalTime || 0))
-      .slice(0, 20);
+
+  async all() {
+
+    if (!window.firebaseReady) return [];
+
+    const snapshot = await firebase
+      .firestore()
+      .collection("leaderboard")
+      .orderBy("survivalTime", "desc")
+      .limit(20)
+      .get();
+
+    return snapshot.docs.map(doc => doc.data());
   },
-  add(record) {
-    let records = [];
-    try {
-      records = JSON.parse(localStorage.getItem(LOCAL_LEADERBOARD_KEY) || '[]');
-    } catch(e) {
-      records = [];
+
+  async add(record) {
+
+    if (!window.firebaseReady) return;
+
+    await firebase
+      .firestore()
+      .collection("leaderboard")
+      .add({
+        displayName: record.displayName,
+        score: record.score,
+        survivalTime: record.survivalTime,
+        createdAt: Date.now()
+      });
+  }
+};
+
+window.saveScoreToFirebase = async function(result) {
+  try {
+    const uid = APP.currentUser.uid;
+
+    const docRef = firebase.firestore()
+      .collection("leaderboard")
+      .doc(uid);
+
+    const doc = await docRef.get();
+
+    // 기존 기록 확인
+    if (doc.exists) {
+      const oldData = doc.data();
+
+      // 기존 기록보다 짧으면 저장 안 함
+      if ((oldData.score || 0) >= result.score) {
+        return;
+      }
     }
-    records.push({ ...record, timestamp: Date.now() });
-    localStorage.setItem(LOCAL_LEADERBOARD_KEY, JSON.stringify(records));
+
+    await docRef.set({
+      uid,
+      displayName: result.displayName,
+      score: result.score,
+      survivalTime: result.survivalTime,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+
+    console.log("최고 기록 저장 완료");
+
+  } catch (err) {
+    console.error("점수 저장 실패", err);
+  }
+};
+
+window.getLeaderboard = async function() {
+  try {
+    const snapshot = await firebase.firestore()
+      .collection("leaderboard")
+      .orderBy("score", "desc")
+      .limit(20)
+      .get();
+
+    return snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+
+  } catch(err) {
+    console.error(err);
+    return [];
   }
 };
 
@@ -91,6 +222,9 @@ window.showScreen = function(id) {
 
   // p5 인스턴스 정리
   if (window.APP.p5Instance) {
+    if (typeof window.APP.p5Instance.disposeHDFaceGame === 'function') {
+      window.APP.p5Instance.disposeHDFaceGame();
+    }
     window.APP.p5Instance.remove();
     window.APP.p5Instance = null;
   }
@@ -169,3 +303,23 @@ function init() {
 }
 
 document.addEventListener('DOMContentLoaded', init);
+
+window.saveScoreToFirebase = async function(result) {
+  try {
+    if (!window.firebaseReady || !APP.currentUser) return;
+
+    await firebase.firestore()
+      .collection("leaderboard")
+      .add({
+        uid: APP.currentUser.uid,
+        displayName: APP.displayName || "Player",
+        score: result.score || 0,
+        survivalTime: result.survivalTime || 0,
+        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+      });
+
+    console.log("점수 저장 완료");
+  } catch(err) {
+    console.error("점수 저장 실패", err);
+  }
+};
