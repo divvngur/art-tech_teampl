@@ -1,0 +1,672 @@
+// ==========================================
+// 전역 변수 — 게임
+// ==========================================
+let gameState = 'LOADING';
+let video;
+let facemesh;
+let predictions = [];
+
+let player;
+let pigeons = [];
+let items = [];
+let splatters = [];
+let score = 0;
+
+const WEBCAM_SOURCE_WIDTH  = 640;
+const WEBCAM_SOURCE_HEIGHT = 480;
+
+// ==========================================
+// 전역 변수 — 보스 (Bossdraw 파트)
+// ==========================================
+let bossType     = null;  // null | 'miniboss' | 'boss' | 'boss2'
+
+let bossState    = 'idle';
+let stateTimer   = 0;
+let patternIndex = 0;
+
+let beamActive   = false;
+let crossPoops   = [];
+let crossWarning = [];
+let bossY        = 0;
+let diveTargetY  = 0;
+
+let playerHP        = 100;
+const PLAYER_MAX_HP = 100;
+let bossHitTimer    = 0;
+const BOSS_INVINCIBLE = 90;
+const BEAM_DAMAGE     = 10;
+const CROSS_DAMAGE    = 15;
+const DIVE_DAMAGE     = 25;
+let hitFlashTimer   = 0;
+
+const IDLE_DURATION  = 80;
+const BEAM_CHARGE    = 40;
+const BEAM_ATTACK    = 70;
+const BEAM_COOL      = 80;
+const CROSS_WARN     = 120;
+const CROSS_FIRE     = 90;
+const CROSS_COOL     = 80;
+const DIVE_WARN      = 80;
+const DIVE_CHARGE    = 40;
+const DIVE_ATTACK    = 35;
+const DIVE_RETURN    = 50;
+const DIVE_COOL      = 70;
+
+const LEFT_WING_TIP  = { x: 155, y: 100 };
+const RIGHT_WING_TIP = { x: 645, y: 100 };
+let CROSS_DIRS = []; // setup() 이후 초기화
+
+// ==========================================
+// setup / draw
+// ==========================================
+function setup() {
+  createCanvas(windowWidth, windowHeight);
+
+  // CROSS_DIRS: radians() 사용 가능한 시점에 초기화
+  CROSS_DIRS = [
+    [ {wx:'left',  angle:radians(30)}, {wx:'left',  angle:radians(50)}, {wx:'left',  angle:radians(70)} ],
+    [ {wx:'right', angle:radians(150)},{wx:'right', angle:radians(130)},{wx:'right', angle:radians(110)} ],
+  ];
+
+  diveTargetY = windowHeight * 0.6;
+
+  // 웹캠
+  video = createCapture(VIDEO);
+  video.size(WEBCAM_SOURCE_WIDTH, WEBCAM_SOURCE_HEIGHT);
+  video.hide();
+
+  // ml5 FaceMesh
+  facemesh = ml5.facemesh(video, modelReady);
+  facemesh.on('predict', results => { predictions = results; });
+
+  // 객체 초기화
+  player = new Player();
+  for (let i = 0; i < 3; i++) {
+    pigeons.push(new Pigeon(random(width), random(50, 150)));
+  }
+}
+
+function modelReady() {
+  console.log('FaceMesh Model Ready!');
+  gameState = 'MAIN';
+}
+
+function draw() {
+  background(240);
+
+  switch (gameState) {
+    case 'LOADING':     drawLoadingScreen();    break;
+    case 'MAIN':        drawMainScreen();       break;
+    case 'LOGIN':       drawLoginScreen();      break;
+    case 'CALIBRATE':   drawCalibrateScreen();  break;
+    case 'PLAYING':     playGame();             break;
+    case 'STAGE_CLEAR': drawStageClearScreen(); break;
+    case 'LEADERBOARD': drawLeaderboard();      break;
+  }
+}
+
+function windowResized() {
+  resizeCanvas(windowWidth, windowHeight);
+  diveTargetY = windowHeight * 0.6;
+}
+
+// ==========================================
+// 핵심 게임 플레이 로직 (팀원 코드 원본 유지)
+// ==========================================
+function playGame() {
+  background(100, 180, 240);
+  noTint();
+
+  if (predictions.length > 0) {
+    let keypoints = predictions[0].scaledMesh;
+    player.update(keypoints);
+  }
+
+  player.show('PLAYING');
+
+  // ── 보스 루프 (bossType이 설정된 스테이지에서만)
+  if (bossType) bossLoop();
+
+  // 비둘기
+  for (let pigeon of pigeons) {
+    pigeon.update();
+    pigeon.show();
+  }
+
+  // 아이템 낙하 + 충돌
+  for (let i = items.length - 1; i >= 0; i--) {
+    let item = items[i];
+    item.update();
+    item.show();
+
+    let dMouth  = dist(item.x, item.y, player.mouthX, player.mouthY);
+    let dFace   = dist(item.x, item.y, player.x, player.y);
+    let hitHead = dFace < 130;
+
+    if (!item.isDead) {
+      if (item.type === 'EGG') {
+        if (dMouth < 50 && player.mouthOpen) {
+          score += 10;
+          item.isDead = true;
+        }
+      } else if (item.type === 'POOP') {
+        if (hitHead) {
+          score -= 5;
+          item.isDead = true;
+          splatters.push({ x: item.x, y: item.y, size: random(100, 250) });
+        }
+      }
+    }
+    if (item.isDead) items.splice(i, 1);
+  }
+
+  // 똥 자국
+  for (let s of splatters) {
+    fill(101, 67, 33, 220);
+    noStroke();
+    ellipse(s.x, s.y, s.size, s.size * 0.8);
+    ellipse(s.x + 20, s.y - 10, s.size * 0.6, s.size * 0.6);
+  }
+
+  // 점수 UI
+  fill(255);
+  stroke(0);
+  strokeWeight(4);
+  textAlign(LEFT, TOP);
+  textSize(40);
+  text(`Score: ${score}`, 20, 20);
+  noStroke();
+}
+
+// ==========================================
+// 보스 메인 루프
+// ==========================================
+function bossLoop() {
+  Bossdraw();
+  BossAttack();
+  PooBeam();
+  CrossPoopDraw();
+  DiveDraw();
+  checkBossHit();
+  drawPlayerHP();
+  drawHitFlash();
+  drawStateDebug();
+}
+
+// ==========================================
+// 보스 그리기
+// ==========================================
+function Bossdraw() {
+  noStroke();
+
+  let shakeX = 0, shakeY = 0;
+  if (bossState === 'dive_warn') {
+    let intensity = map(stateTimer, 0, DIVE_WARN, 1, 6);
+    shakeX = random(-intensity, intensity);
+    shakeY = random(-intensity, intensity);
+  }
+
+  push();
+  translate(shakeX, bossY + shakeY);
+
+  fill(180); rect(300, 0, 200, 300);
+  fill(150); rect(300, 100, 200, 200);
+  arc(400, 300, 200, 300, TWO_PI, PI);
+
+  if (bossState === 'beam_charge') {
+    let glowAlpha = map(sin(frameCount * 0.3), -1, 1, 80, 200);
+    let glowSize  = map(stateTimer, 0, BEAM_CHARGE, 10, 50);
+    noStroke(); fill(180, 160, 0, glowAlpha);
+    ellipse(400, 470, glowSize, glowSize);
+  }
+  fill('#ddcf4f');
+  triangle(380, 440, 420, 440, 400, 490);
+
+  // 눈
+  let isAboutToAttack = (bossState === 'idle' && stateTimer > IDLE_DURATION * 0.5);
+  let eyeSpinSpeed    = isAboutToAttack
+    ? map(stateTimer, IDLE_DURATION * 0.5, IDLE_DURATION, 0.035, 0.3) : 0;
+  let spinAngle  = frameCount * eyeSpinSpeed;
+  let isDiveWarn = (bossState === 'dive_warn' || bossState === 'dive_charge');
+
+  fill(isDiveWarn ? color(255, 80, 80) : color(255)); noStroke();
+  ellipse(330, 350, 50, 70);
+  ellipse(470, 350, 50, 70);
+
+  let orbitR  = 8;
+  let lPupilX = 320 + cos(spinAngle) * orbitR;
+  let lPupilY = 360 + sin(spinAngle) * orbitR;
+  fill(isDiveWarn ? color(180, 0, 0) : color(55)); noStroke();
+  ellipse(lPupilX, lPupilY, 30, 30);
+  fill(255); ellipse(lPupilX + 5, lPupilY - 5, 8, 8);
+
+  let rPupilX = 480 + cos(-spinAngle) * orbitR;
+  let rPupilY = 340 + sin(-spinAngle) * orbitR;
+  fill(isDiveWarn ? color(180, 0, 0) : color(55)); noStroke();
+  ellipse(rPupilX, rPupilY, 30, 30);
+  fill(255); ellipse(rPupilX + 5, rPupilY - 5, 8, 8);
+
+  // 날개
+  let flapAngle;
+  if      (bossState === 'cross_warn')  { let t = stateTimer/CROSS_WARN; flapAngle = lerp(radians(20), radians(-40), t) * sin(frameCount*1.5); }
+  else if (bossState === 'dive_attack') { flapAngle = radians(40); }
+  else if (bossState === 'dive_charge') { flapAngle = lerp(0, radians(-50), stateTimer/DIVE_CHARGE); }
+  else                                  { flapAngle = sin(frameCount * 1.5) * radians(20); }
+
+  let wingColor;
+  if      (bossState==='cross_warn'||bossState==='cross_fire')               wingColor = color(200,100,100);
+  else if (isDiveWarn||bossState==='dive_attack'||bossState==='dive_return') wingColor = color(220,80,80);
+  else                                                                        wingColor = color(150);
+
+  const drawWing = () => {
+    fill(wingColor);
+    triangle(50,0,-60,60,-60,-60);
+    ellipse(-145,50,200,30); ellipse(-130,35,200,30);
+    ellipse(-120,20,200,30); ellipse(-110,5,200,30);
+    ellipse(-90,-10,200,30); ellipse(-60,-35,200,30);
+    ellipse(-50,-45,150,10); ellipse(-40,-50,70,20);
+  };
+
+  push(); translate(300,150); rotate(flapAngle); drawWing(); pop();
+  push(); translate(500,150); scale(-1,1); rotate(flapAngle); drawWing(); pop();
+
+  pop();
+}
+
+// ==========================================
+// 상태 머신
+// ==========================================
+function BossAttack() {
+  stateTimer++;
+
+  if (bossState === 'idle') {
+    if (stateTimer > IDLE_DURATION) {
+      stateTimer = 0;
+      const poolSize = bossType === 'miniboss' ? 1
+                     : bossType === 'boss'     ? 2
+                     :                           3;
+      const p = patternIndex % poolSize;
+      if      (p===0) { bossState = 'beam_charge'; }
+      else if (p===1) { bossState = 'cross_warn'; initCrossWarning(); }
+      else            { bossState = 'dive_warn'; }
+    }
+  }
+  else if (bossState==='beam_charge')  { if(stateTimer>BEAM_CHARGE)  { bossState='beam_attack'; beamActive=true;  stateTimer=0; } }
+  else if (bossState==='beam_attack')  { if(stateTimer>BEAM_ATTACK)  { bossState='beam_cool';   beamActive=false; stateTimer=0; } }
+  else if (bossState==='beam_cool')    { if(stateTimer>BEAM_COOL)    { bossState='idle'; patternIndex++; stateTimer=0; } }
+  else if (bossState==='cross_warn')   { if(stateTimer>CROSS_WARN)   { bossState='cross_fire'; fireCrossPoops(); stateTimer=0; } }
+  else if (bossState==='cross_fire')   { if(stateTimer>CROSS_FIRE)   { bossState='cross_cool'; crossPoops=[]; crossWarning=[]; stateTimer=0; } }
+  else if (bossState==='cross_cool')   { if(stateTimer>CROSS_COOL)   { bossState='idle'; patternIndex++; stateTimer=0; } }
+  else if (bossState==='dive_warn')    { if(stateTimer>DIVE_WARN)    { bossState='dive_charge'; stateTimer=0; } }
+  else if (bossState==='dive_charge')  { bossY=lerp(bossY,-40,0.15); if(stateTimer>DIVE_CHARGE) { bossState='dive_attack'; stateTimer=0; } }
+  else if (bossState==='dive_attack')  { bossY=lerp(-40,diveTargetY,easeIn(stateTimer/DIVE_ATTACK)); if(stateTimer>DIVE_ATTACK) { bossState='dive_return'; stateTimer=0; } }
+  else if (bossState==='dive_return')  { bossY=lerp(bossY,0,0.1); if(stateTimer>DIVE_RETURN) { bossState='dive_cool'; bossY=0; stateTimer=0; } }
+  else if (bossState==='dive_cool')    { if(stateTimer>DIVE_COOL)    { bossState='idle'; patternIndex++; stateTimer=0; } }
+}
+
+function easeIn(t) { return t * t * t; }
+
+// ==========================================
+// 패턴 1: 똥 빔
+// ==========================================
+function PooBeam() {
+  if (!beamActive) return;
+  let progress  = stateTimer / BEAM_ATTACK;
+  let beamWidth = lerp(40, 15, progress);
+  let beamAlpha = lerp(255, 180, progress);
+  let wobble    = sin(frameCount * 30) * 4;
+
+  stroke(80,50,0,beamAlpha);         strokeWeight(beamWidth+6);   line(400+wobble,490,400+wobble,height);
+  stroke(139,90,43,beamAlpha);       strokeWeight(beamWidth);     line(400+wobble,490,400+wobble,height);
+  stroke(180,130,70,beamAlpha*0.6);  strokeWeight(beamWidth*0.3); line(400+wobble,490,400+wobble,height);
+  noStroke();
+}
+
+// ==========================================
+// 패턴 2: 교차 사선 똥
+// ==========================================
+function initCrossWarning() {
+  crossWarning = [];
+  [...CROSS_DIRS[0],...CROSS_DIRS[1]].forEach(d => {
+    let wx = d.wx==='left' ? LEFT_WING_TIP.x : RIGHT_WING_TIP.x;
+    let wy = d.wx==='left' ? LEFT_WING_TIP.y : RIGHT_WING_TIP.y;
+    crossWarning.push({ x1:wx, y1:wy, x2:wx+cos(d.angle)*2000, y2:wy+sin(d.angle)*2000 });
+  });
+}
+
+function fireCrossPoops() {
+  crossPoops = [];
+  [...CROSS_DIRS[0],...CROSS_DIRS[1]].forEach(d => {
+    let wx = d.wx==='left' ? LEFT_WING_TIP.x : RIGHT_WING_TIP.x;
+    let wy = d.wx==='left' ? LEFT_WING_TIP.y : RIGHT_WING_TIP.y;
+    crossPoops.push({ x:wx, y:wy, vx:cos(d.angle)*8, vy:sin(d.angle)*8, angle:d.angle });
+  });
+}
+
+function CrossPoopDraw() {
+  if (bossState==='cross_warn' && crossWarning.length>0) {
+    let blink     = floor(stateTimer/(stateTimer>CROSS_WARN*0.75?4:8))%2===0;
+    let warnAlpha = blink ? 220 : 80;
+    for (let w of crossWarning) {
+      stroke(255,0,0,warnAlpha); strokeWeight(4); line(w.x1,w.y1,w.x2,w.y2);
+      stroke(255,255,255,warnAlpha*0.5); strokeWeight(1); line(w.x1,w.y1,w.x2,w.y2);
+    }
+    noStroke();
+    fill(255,50,50,200); textSize(48); textAlign(CENTER,CENTER);
+    text(ceil((CROSS_WARN-stateTimer)/60), 400, 250);
+    textAlign(LEFT,BASELINE);
+  }
+  if (bossState==='cross_fire') {
+    for (let p of crossPoops) {
+      p.x += p.vx; p.y += p.vy;
+      push();
+      translate(p.x, p.y);
+      textSize(50); textAlign(CENTER, CENTER);
+      text("💩", 0, 0);
+      pop();
+    }
+    crossPoops = crossPoops.filter(p =>
+      p.x>-100 && p.x<width+100 && p.y>-100 && p.y<height+100);
+  }
+}
+
+// ==========================================
+// 패턴 3: 돌진 이펙트
+// ==========================================
+function DiveDraw() {
+  if (bossState==='dive_warn') {
+    let blink = floor(stateTimer/6)%2===0;
+    let a = blink ? 230 : 60;
+    stroke(255,30,30,a); strokeWeight(5);
+    for (let i=0;i<3;i++) { let ay=520+i*50; line(400,ay,380,ay-25); line(400,ay,420,ay-25); }
+    noStroke();
+    fill(255,30,30,a); textSize(36); textAlign(CENTER,CENTER);
+    text('⚠ 돌진 ⚠', 400, 580);
+    textAlign(LEFT,BASELINE);
+  }
+  if (bossState==='dive_attack') {
+    let alpha    = map(stateTimer, 0, DIVE_ATTACK, 200, 50);
+    let trailLen = map(stateTimer, 0, DIVE_ATTACK, 20, 120);
+    stroke(200,80,80,alpha); strokeWeight(3);
+    for (let i=0;i<6;i++) { let tx=280+i*30; line(tx,bossY+150,tx+random(-5,5),bossY+150-trailLen); }
+    noStroke();
+  }
+}
+
+// ==========================================
+// 피격 판정
+// ==========================================
+function checkBossHit() {
+  if (bossHitTimer > 0) { bossHitTimer--; return; }
+
+  let px  = player.x;
+  let py  = player.y;
+  let hit = false;
+  let dmg = 0;
+
+  if (beamActive) {
+    if (abs(px-400) < 60 && py > 490) { hit=true; dmg=BEAM_DAMAGE; }
+  }
+  if (!hit && bossState==='cross_fire') {
+    for (let p of crossPoops) {
+      if (dist(px,py,p.x,p.y) < 130) { hit=true; dmg=CROSS_DAMAGE; break; }
+    }
+  }
+  if (!hit && bossState==='dive_attack') {
+    if (px>300 && px<500 && py>bossY && py<bossY+430) { hit=true; dmg=DIVE_DAMAGE; }
+  }
+
+  if (hit) {
+    playerHP      = max(0, playerHP - dmg);
+    bossHitTimer  = BOSS_INVINCIBLE;
+    hitFlashTimer = 12;
+  }
+}
+
+// ==========================================
+// 플레이어 HP바 UI
+// ==========================================
+function drawPlayerHP() {
+  const barW  = 300;
+  const barH  = 28;
+  const barX  = width/2 - barW/2;
+  const barY  = height - 60;
+  const ratio = playerHP / PLAYER_MAX_HP;
+
+  noStroke(); fill(30,30,30,200);
+  rect(barX-2, barY-2, barW+4, barH+4, 8);
+
+  const r = lerp(50,  220, 1-ratio);
+  const g = lerp(220, 40,  1-ratio);
+  fill(r, g, 50);
+  rect(barX, barY, barW*ratio, barH, 6);
+
+  noFill(); stroke(200); strokeWeight(1.5);
+  rect(barX, barY, barW, barH, 6);
+
+  noStroke(); fill(255);
+  textSize(14); textAlign(CENTER,CENTER);
+  text(`HP  ${playerHP} / ${PLAYER_MAX_HP}`, width/2, barY+barH/2);
+  textAlign(LEFT,BASELINE);
+
+  if (bossHitTimer>0 && floor(bossHitTimer/6)%2===0) {
+    fill(255,220,0,200); textSize(12); textAlign(CENTER,CENTER);
+    text('무적!', width/2, barY-14);
+    textAlign(LEFT,BASELINE);
+  }
+}
+
+// ==========================================
+// 피격 화면 플래시
+// ==========================================
+function drawHitFlash() {
+  if (hitFlashTimer <= 0) return;
+  const a = map(hitFlashTimer, 0, 12, 0, 120);
+  noStroke(); fill(255,0,0,a);
+  rect(0, 0, width, height);
+  hitFlashTimer--;
+}
+
+// ==========================================
+// 디버그
+// ==========================================
+function drawStateDebug() {
+  const names = ['빔','교차똥','돌진'];
+  noStroke(); fill(0,0,0,140); rect(10,10,260,105,8);
+  fill(255); textSize(13); textAlign(LEFT,BASELINE);
+  text(`보스(${bossType}): ${bossState}`,   20, 30);
+  text(`타이머: ${stateTimer}`,              20, 48);
+  text(`패턴: ${names[patternIndex % (bossType==='miniboss'?1:bossType==='boss'?2:3)]}`, 20, 66);
+  text(`무적: ${bossHitTimer>0?bossHitTimer+'f':'-'}`, 20, 84);
+  text(`플레이어HP: ${playerHP}`,            20, 102);
+}
+
+// ==========================================
+// 클래스 정의 (팀원 코드 원본 그대로)
+// ==========================================
+class Player {
+  constructor() {
+    this.x = width / 2;
+    this.y = height / 2;
+    this.mouthX = width / 2;
+    this.mouthY = height / 2 + 20;
+    this.mouthOpen = false;
+    this.faceSrcX = 0;
+    this.faceSrcY = 0;
+    this.faceSize = 0;
+    this.maskBuffer = createGraphics(250, 250);
+  }
+
+  update(keypoints) {
+    this.x = map(keypoints[1][0], 0, WEBCAM_SOURCE_WIDTH, width, 0);
+    this.y = map(keypoints[1][1], 0, WEBCAM_SOURCE_HEIGHT, 0, height);
+
+    let upperLip = keypoints[13];
+    let lowerLip = keypoints[14];
+    let mouthRawX = (upperLip[0] + lowerLip[0]) / 2;
+    let mouthRawY = (upperLip[1] + lowerLip[1]) / 2;
+    this.mouthX = map(mouthRawX, 0, WEBCAM_SOURCE_WIDTH, width, 0);
+    this.mouthY = map(mouthRawY, 0, WEBCAM_SOURCE_HEIGHT, 0, height);
+    this.mouthOpen = dist(upperLip[0],upperLip[1],lowerLip[0],lowerLip[1]) > 10;
+
+    let minX=WEBCAM_SOURCE_WIDTH, minY=WEBCAM_SOURCE_HEIGHT, maxX=0, maxY=0;
+    for (let i=0; i<keypoints.length; i++) {
+      let px=keypoints[i][0], py=keypoints[i][1];
+      if(px<minX) minX=px; if(px>maxX) maxX=px;
+      if(py<minY) minY=py; if(py>maxY) maxY=py;
+    }
+    let maxSide = max(maxX-minX, maxY-minY);
+    this.faceSize = maxSide + 40*2;
+    let centerX=(minX+maxX)/2, centerY=(minY+maxY)/2;
+    this.faceSrcX = centerX - this.faceSize/2;
+    this.faceSrcY = centerY - this.faceSize/2 - 15;
+  }
+
+  show(mode) {
+    if (mode === 'CALIBRATE') {
+      noFill(); stroke(255,255,0,180); strokeWeight(4);
+      ellipse(this.x, this.y, 260, 260);
+      if (this.mouthOpen) {
+        fill(0,255,255); noStroke(); ellipse(this.mouthX, this.mouthY, 60, 60);
+      } else {
+        noFill(); stroke(0,255,255,150); strokeWeight(3);
+        ellipse(this.mouthX, this.mouthY, 30, 30); noStroke();
+      }
+    } else {
+      if (this.faceSize > 0) {
+        this.maskBuffer.clear();
+        this.maskBuffer.noStroke();
+        this.maskBuffer.fill(255);
+        let circleSize = this.maskBuffer.width * 0.9;
+        this.maskBuffer.ellipse(this.maskBuffer.width/2, this.maskBuffer.height/2, circleSize, circleSize);
+        this.maskBuffer.drawingContext.globalCompositeOperation = 'source-in';
+        this.maskBuffer.image(video, 0, 0, this.maskBuffer.width, this.maskBuffer.height,
+          this.faceSrcX, this.faceSrcY, this.faceSize, this.faceSize);
+        this.maskBuffer.drawingContext.globalCompositeOperation = 'source-over';
+        push();
+        translate(this.x, this.y);
+        scale(-1, 1);
+        imageMode(CENTER);
+        let displayScale = (height / WEBCAM_SOURCE_HEIGHT) * 0.85;
+        let finalDisplaySize = this.faceSize * displayScale;
+        image(this.maskBuffer, 0, 0, finalDisplaySize, finalDisplaySize);
+        pop();
+      }
+      fill(0,255,255,150); noStroke();
+      ellipse(this.mouthX, this.mouthY, 10, 10);
+    }
+  }
+}
+
+class Pigeon {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.speed = random(3, 6);
+    this.direction = random() > 0.5 ? 1 : -1;
+  }
+
+  update() {
+    this.x += this.speed * this.direction;
+    if (this.x > width+50) this.x = -50;
+    if (this.x < -50) this.x = width+50;
+    if (random() < 0.015) {
+      let type = random() > 0.7 ? 'EGG' : 'POOP';
+      items.push(new Item(this.x, this.y, type));
+    }
+  }
+
+  show() {
+    textSize(60); textAlign(CENTER,CENTER);
+    text("🕊️", this.x, this.y);
+  }
+}
+
+class Item {
+  constructor(x, y, type) {
+    this.x = x; this.y = y;
+    this.type = type;
+    this.speed = random(5, 9);
+    this.isDead = false;
+  }
+
+  update() {
+    this.y += this.speed;
+    if (this.y > height+50) this.isDead = true;
+  }
+
+  show() {
+    textSize(50); textAlign(CENTER,CENTER);
+    text(this.type==='EGG' ? "🥚" : "💩", this.x, this.y);
+  }
+}
+
+// ==========================================
+// 화면 렌더링 함수들 (팀원 코드 원본 그대로)
+// ==========================================
+function drawLoadingScreen() {
+  background(30);
+  fill(255); textAlign(CENTER,CENTER); textSize(32);
+  text("AI 카메라 시스템 로딩 중...", width/2, height/2-20);
+  textSize(18); fill(150);
+  text("잠시만 기다려주세요! (웹캠 권한 허용 필요)", width/2, height/2+30);
+}
+
+function drawMainScreen() {
+  background(200,250,200);
+  fill(0); textAlign(CENTER,CENTER); textSize(40);
+  text("입벌려! 비둘기 똥 들어간다~", width/2, height/2-50);
+  textSize(20);
+  text("스테이지 모드를 시작하려면 화면을 클릭하세요", width/2, height/2+50);
+}
+
+function drawLoginScreen() {
+  background(255);
+  text("로그인 화면", width/2, height/2);
+}
+
+function drawCalibrateScreen() {
+  background(255);
+  push(); translate(width,0); scale(-1,1); image(video,0,0,width,height); pop();
+  if (predictions.length>0) player.update(predictions[0].scaledMesh);
+  player.show('CALIBRATE');
+  fill(0); stroke(255); strokeWeight(4); textAlign(CENTER,CENTER); textSize(32);
+  text("노란 원 안에 얼굴이 쏙 들어가게 위치를 맞추세요!", width/2, height/2-50);
+  textSize(24);
+  text("준비되었으면 화면을 클릭하여 게임을 시작합니다.", width/2, height/2+50);
+  noStroke();
+}
+
+function drawStageClearScreen() {
+  background(255);
+  text("스테이지 클리어!", width/2, height/2);
+}
+
+function drawLeaderboard() {
+  background(255);
+  text("순위표", width/2, height/2);
+}
+
+function mousePressed() {
+  if (gameState === 'MAIN') {
+    gameState = 'CALIBRATE';
+  } else if (gameState === 'CALIBRATE') {
+    gameState     = 'PLAYING';
+    score         = 0;
+    splatters     = [];
+    items         = [];
+    // 보스 변수 초기화
+    playerHP      = PLAYER_MAX_HP;
+    bossHitTimer  = 0;
+    hitFlashTimer = 0;
+    bossState     = 'idle';
+    patternIndex  = 0;
+    stateTimer    = 0;
+    bossY         = 0;
+    beamActive    = false;
+    crossPoops    = [];
+    crossWarning  = [];
+    // bossType은 StageConfig의 startStage()에서 설정됨
+    // 예: startStage(currentStage);
+  }
+}
