@@ -54,6 +54,9 @@ window.HDFaceGame = function HDFaceGame(options) {
     let diveTargetY  = 0;
     let bossHitTimer    = 0;
     const BOSS_INVINCIBLE = 90;
+    const BEAM_DAMAGE     = 1;
+    const CROSS_DAMAGE    = 1;
+    const DIVE_DAMAGE     = 1;
     let hitFlashTimer   = 0;
 
     const IDLE_DURATION  = 80;
@@ -61,7 +64,7 @@ window.HDFaceGame = function HDFaceGame(options) {
     const BEAM_ATTACK    = 70;
     const BEAM_COOL      = 80;
     const CROSS_WARN     = 120;
-    const CROSS_FIRE     = 90;
+    const CROSS_FIRE     = 180;
     const CROSS_COOL     = 80;
     const DIVE_WARN      = 80;
     const DIVE_CHARGE    = 40;
@@ -69,6 +72,9 @@ window.HDFaceGame = function HDFaceGame(options) {
     const DIVE_RETURN    = 50;
     const DIVE_COOL      = 70;
 
+    let BX    = 0;
+    let BC    = 0;
+    let bossVX = 1.5;
     let LEFT_WING_TIP  = { x: 155, y: 100 };
     let RIGHT_WING_TIP = { x: 645, y: 100 };
     let CROSS_DIRS = [];
@@ -441,6 +447,14 @@ window.HDFaceGame = function HDFaceGame(options) {
     //  보스 루프
     // ══════════════════════════════════════════════════════
     function bossLoop() {
+      // 보스 좌우 이동
+      BX += bossVX;
+      BC = BX + 100;
+      LEFT_WING_TIP  = { x: BX - 145, y: 100 };
+      RIGHT_WING_TIP = { x: BX + 345, y: 100 };
+      // 벽에 닿으면 반전
+      if (BX < 50 || BX > sk.width - 250) bossVX *= -1;
+
       bossDraw();
       bossAttack();
       pooBeem();
@@ -655,18 +669,17 @@ window.HDFaceGame = function HDFaceGame(options) {
       const px  = player.x;
       const py  = player.y;
       let hit = false;
-      let dmg = 0;
 
       if (beamActive) {
-        if (sk.abs(px-BC)<60 && py>490) { hit=true; dmg=BEAM_DAMAGE; }
+        if (sk.abs(px-BC)<60 && py>490) { hit=true; }
       }
       if (!hit && bossState==='cross_fire') {
         for (const p of crossPoops) {
-          if (sk.dist(px,py,p.x,p.y)<130) { hit=true; dmg=CROSS_DAMAGE; break; }
+          if (sk.dist(px,py,p.x,p.y)<130) { hit=true; break; }
         }
       }
       if (!hit && bossState==='dive_attack') {
-        if (px>BX&&px<BX+200&&py>bossY&&py<bossY+430) { hit=true; dmg=DIVE_DAMAGE; }
+        if (px>BX&&px<BX+200&&py>bossY&&py<bossY+430) { hit=true; }
       }
 
       if (hit) {
