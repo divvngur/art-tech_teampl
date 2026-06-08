@@ -1,5 +1,11 @@
 window.StageSelectScreen = {
   init() {
+    if (!window.bgm || window.bgm.paused) {
+  window.bgm = new Audio('src/assets/bgm.mp3');
+  window.bgm.loop = true;
+  window.bgm.volume = 0.5;
+  window.bgm.play();
+}
     const screen = document.getElementById('stage-select-screen');
 
     const getClass = (stage) => {
