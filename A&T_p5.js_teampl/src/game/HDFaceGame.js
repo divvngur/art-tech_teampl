@@ -75,6 +75,8 @@ window.HDFaceGame = function HDFaceGame(options) {
     let BX    = 0;
     let BC    = 0;
     let bossVX = 1.5;
+
+
     let LEFT_WING_TIP  = { x: 155, y: 100 };
     let RIGHT_WING_TIP = { x: 645, y: 100 };
     let CROSS_DIRS = [];
