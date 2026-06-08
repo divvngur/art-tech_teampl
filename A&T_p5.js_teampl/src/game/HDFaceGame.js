@@ -52,13 +52,8 @@ window.HDFaceGame = function HDFaceGame(options) {
     let crossWarning = [];
     let bossY        = 0;
     let diveTargetY  = 0;
-    let playerHP        = 100;
-    const PLAYER_MAX_HP = 100;
     let bossHitTimer    = 0;
     const BOSS_INVINCIBLE = 90;
-    const BEAM_DAMAGE     = 10;
-    const CROSS_DAMAGE    = 15;
-    const DIVE_DAMAGE     = 25;
     let hitFlashTimer   = 0;
 
     const IDLE_DURATION  = 80;
@@ -74,8 +69,8 @@ window.HDFaceGame = function HDFaceGame(options) {
     const DIVE_RETURN    = 50;
     const DIVE_COOL      = 70;
 
-    const LEFT_WING_TIP  = { x: 155, y: 100 };
-    const RIGHT_WING_TIP = { x: 645, y: 100 };
+    let LEFT_WING_TIP  = { x: 155, y: 100 };
+    let RIGHT_WING_TIP = { x: 645, y: 100 };
     let CROSS_DIRS = [];
 
     class HDPlayer {
@@ -373,7 +368,6 @@ window.HDFaceGame = function HDFaceGame(options) {
       beamActive   = false;
       crossPoops   = [];
       crossWarning = [];
-      playerHP     = PLAYER_MAX_HP;
       bossHitTimer  = 0;
       hitFlashTimer = 0;
 
@@ -453,7 +447,6 @@ window.HDFaceGame = function HDFaceGame(options) {
       crossPoopDraw();
       diveDraw();
       checkBossHit();
-      drawPlayerHP();
       drawHitFlash();
     }
 
@@ -677,47 +670,15 @@ window.HDFaceGame = function HDFaceGame(options) {
       }
 
       if (hit) {
-        playerHP      = sk.max(0, playerHP-dmg);
+        lives        -= 1;
         bossHitTimer  = BOSS_INVINCIBLE;
         hitFlashTimer = 12;
         flashHit();
+        updateHud();
       }
     }
 
-    // ══════════════════════════════════════════════════════
-    //  HP바 UI
-    // ══════════════════════════════════════════════════════
-    function drawPlayerHP() {
-      const barW  = 300;
-      const barH  = 28;
-      const barX  = sk.width/2 - barW/2;
-      const barY  = sk.height - 60;
-      const ratio = playerHP / PLAYER_MAX_HP;
-
-      sk.noStroke(); sk.fill(30,30,30,200);
-      sk.rect(barX-2, barY-2, barW+4, barH+4, 8);
-
-      const r = sk.lerp(50,220,1-ratio);
-      const g = sk.lerp(220,40,1-ratio);
-      sk.fill(r,g,50);
-      sk.rect(barX, barY, barW*ratio, barH, 6);
-
-      sk.noFill(); sk.stroke(200); sk.strokeWeight(1.5);
-      sk.rect(barX, barY, barW, barH, 6);
-
-      sk.noStroke(); sk.fill(255);
-      sk.textSize(14); sk.textAlign(sk.CENTER,sk.CENTER);
-      sk.text(`HP  ${playerHP} / ${PLAYER_MAX_HP}`, sk.width/2, barY+barH/2);
-      sk.textAlign(sk.LEFT,sk.BASELINE);
-
-      if (bossHitTimer>0 && Math.floor(bossHitTimer/6)%2===0) {
-        sk.fill(255,220,0,200); sk.textSize(12); sk.textAlign(sk.CENTER,sk.CENTER);
-        sk.text('무적!', sk.width/2, barY-14);
-        sk.textAlign(sk.LEFT,sk.BASELINE);
-      }
-    }
-
-    function drawHitFlash() {
+        function drawHitFlash() {
       if (hitFlashTimer<=0) return;
       const a = sk.map(hitFlashTimer,0,12,0,120);
       sk.noStroke(); sk.fill(255,0,0,a);
@@ -835,7 +796,7 @@ window.HDFaceGame = function HDFaceGame(options) {
 
     function checkFinish() {
       const elapsed = startedAt ? sk.millis()-startedAt : 0;
-      if (lives<=0 || playerHP<=0) {
+      if (lives<=0) {
         onFinish({ cleared:false, score, lives, survivalTime:elapsed });
         sk.noLoop();
         return;
