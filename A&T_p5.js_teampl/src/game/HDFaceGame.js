@@ -15,6 +15,14 @@ window.HDFaceGame = function HDFaceGame(options) {
 
   let p5Instance = null;
 
+  const sfxEat   = new Audio('src/assets/powerup01.mp3');
+  const sfxHit   = new Audio('src/assets/powerdown02.mp3');
+  const sfxBeam  = new Audio('src/assets/magic_gun.mp3');
+  const sfxCross = new Audio('src/assets/bubble_attack2.mp3');
+  const sfxDive  = new Audio('src/assets/swing3.mp3');
+  const sfxNimble = new Audio('src/assets/Nimble_Ride.mp3');
+  sfxNimble.loop = true;
+
   const sketch = (sk) => {
     let gameState = 'LOADING';
     let videoHD = null;
@@ -279,8 +287,9 @@ window.HDFaceGame = function HDFaceGame(options) {
         pauseButton.textContent = '⏸';
         document.getElementById('pause-overlay').style.display = 'none';
       };
-      quitButton.onclick       = () => onQuit(score, lives, startedAt ? sk.millis() - startedAt : 0);
-      quitConfirmButton.onclick = () => onQuit(score, lives, startedAt ? sk.millis() - startedAt : 0);
+      const doQuit = () => { sfxNimble.pause(); sfxNimble.currentTime = 0; onQuit(score, lives, startedAt ? sk.millis() - startedAt : 0); };
+      quitButton.onclick        = doQuit;
+      quitConfirmButton.onclick = doQuit;
     }
 
     function setupCameraAndModels() {
@@ -428,8 +437,10 @@ window.HDFaceGame = function HDFaceGame(options) {
           if (item.type === 'EGG' && mouthDistance < player.mouthRadius * 0.7 && player.mouthOpen) {
             score += 10;
             item.isDead = true;
+            sfxEat.currentTime = 0; sfxEat.play();
           } else if (item.type === 'POOP' && hitHead && sk.millis() > invincibleUntil) {
             lives -= 1;
+            sfxHit.currentTime = 0; sfxHit.play();
             invincibleUntil = sk.millis() + 900;
             item.isDead = true;
             splatters.push({ x:item.x, y:item.y, size:sk.random(100,250), bornAt:sk.millis() });
@@ -561,14 +572,14 @@ window.HDFaceGame = function HDFaceGame(options) {
           else            { bossState='dive_warn'; }
         }
       }
-      else if (bossState==='beam_charge') { if(stateTimer>BEAM_CHARGE) { bossState='beam_attack'; beamActive=true;  stateTimer=0; } }
+      else if (bossState==='beam_charge') { if(stateTimer>BEAM_CHARGE) { bossState='beam_attack'; beamActive=true; sfxBeam.currentTime=0; sfxBeam.play(); stateTimer=0; } }
       else if (bossState==='beam_attack') { if(stateTimer>BEAM_ATTACK) { bossState='beam_cool';   beamActive=false; stateTimer=0; } }
       else if (bossState==='beam_cool')   { if(stateTimer>BEAM_COOL)   { bossState='idle'; patternIndex++; stateTimer=0; } }
       else if (bossState==='cross_warn')  { if(stateTimer>CROSS_WARN)  { bossState='cross_fire'; fireCrossPoops(); stateTimer=0; } }
       else if (bossState==='cross_fire')  { if(stateTimer>CROSS_FIRE)  { bossState='cross_cool'; crossPoops=[]; crossWarning=[]; stateTimer=0; } }
       else if (bossState==='cross_cool')  { if(stateTimer>CROSS_COOL)  { bossState='idle'; patternIndex++; stateTimer=0; } }
       else if (bossState==='dive_warn')   { if(stateTimer>DIVE_WARN)   { bossState='dive_charge'; stateTimer=0; } }
-      else if (bossState==='dive_charge') { bossY=sk.lerp(bossY,-40,0.15); if(stateTimer>DIVE_CHARGE) { bossState='dive_attack'; stateTimer=0; } }
+      else if (bossState==='dive_charge') { bossY=sk.lerp(bossY,-40,0.15); if(stateTimer>DIVE_CHARGE) { bossState='dive_attack'; sfxDive.currentTime=0; sfxDive.play(); stateTimer=0; } }
       else if (bossState==='dive_attack') { bossY=sk.lerp(-40,diveTargetY,easeIn(stateTimer/DIVE_ATTACK)); if(stateTimer>DIVE_ATTACK) { bossState='dive_return'; stateTimer=0; } }
       else if (bossState==='dive_return') { bossY=sk.lerp(bossY,0,0.1); if(stateTimer>DIVE_RETURN) { bossState='dive_cool'; bossY=0; stateTimer=0; } }
       else if (bossState==='dive_cool')   { if(stateTimer>DIVE_COOL)   { bossState='idle'; patternIndex++; stateTimer=0; } }
@@ -605,6 +616,7 @@ window.HDFaceGame = function HDFaceGame(options) {
     }
 
     function fireCrossPoops() {
+      sfxCross.currentTime = 0; sfxCross.play();
       crossPoops = [];
       [...CROSS_DIRS[0],...CROSS_DIRS[1]].forEach(d => {
         const wx = d.wx==='left' ? LEFT_WING_TIP.x : RIGHT_WING_TIP.x;
@@ -768,6 +780,7 @@ window.HDFaceGame = function HDFaceGame(options) {
         baseFaceScreenWidth = player.faceScreenWidth;
         warningAlpha  = 0;
         gameState     = 'PLAYING';
+        sfxNimble.currentTime = 0; sfxNimble.play();
         score         = 0;
         lives         = 3;
         items         = [];
@@ -812,6 +825,7 @@ window.HDFaceGame = function HDFaceGame(options) {
     function checkFinish() {
       const elapsed = startedAt ? sk.millis()-startedAt : 0;
       if (lives<=0) {
+        sfxNimble.pause(); sfxNimble.currentTime = 0;
         onFinish({ cleared:false, score, lives, survivalTime:elapsed });
         sk.noLoop();
         return;
@@ -819,6 +833,7 @@ window.HDFaceGame = function HDFaceGame(options) {
       if (mode==='stage') {
         const goalScore = (STAGES[selectedStage].goal||5)*10;
         if (score>=goalScore) {
+          sfxNimble.pause(); sfxNimble.currentTime = 0;
           onFinish({ cleared:true, score, lives, survivalTime:elapsed, stage:selectedStage });
           sk.noLoop();
         }
