@@ -1,5 +1,9 @@
 window.GameScreen = {
   init() {
+    if (window.bgm) {
+  window.bgm.pause();
+  window.bgm.currentTime = 0;
+}
     const hud = document.getElementById('game-hud');
     hud.style.display = 'flex';
 
@@ -31,6 +35,12 @@ window.GameScreen = {
       ResultScreen.init();
       showScreen('result-screen');
     };
+
+    if (window.bgm) {
+  window.bgm.pause();
+  window.bgm.currentTime = 0;
+  window.bgm = null;
+}
 
     APP.p5Instance = HDFaceGame({
       containerId: 'game-screen',
