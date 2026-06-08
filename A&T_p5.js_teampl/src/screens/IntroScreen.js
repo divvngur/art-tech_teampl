@@ -3,7 +3,7 @@ window.IntroScreen = {
     const screen = document.getElementById('intro-screen');
 
     screen.innerHTML = `
-      <div class="ui-screen bg-sky ui-scroll">
+      <div class="ui-screen ui-scroll" style="background-image: url('src/assets/bg.png'); background-size: cover; background-position: center; background-repeat: no-repeat;">
         <div class="bg-clouds">
           <div class="bg-cloud" style="top:12%; left:8%;">☁️</div>
           <div class="bg-cloud" style="top:27%; right:12%; animation-delay:1s;">☁️</div>
@@ -54,10 +54,18 @@ window.IntroScreen = {
       </div>
     `;
 
-    document.getElementById('intro-start').onclick = () => {
-      enterFullscreen();
-      MainScreen.init();
-      showScreen('main-screen');
-    };
+   if (!window.bgm || window.bgm.paused) {
+  window.bgm = new Audio('src/assets/bgm.mp3');
+  window.bgm.loop = true;
+  window.bgm.volume = 0.5;
+  window.bgm.play();
+}
+
+document.getElementById('intro-start').onclick = () => {
+  enterFullscreen();
+  MainScreen.init();
+  showScreen('main-screen');
+};
+
   }
 };
