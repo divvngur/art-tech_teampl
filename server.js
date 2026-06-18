@@ -5,13 +5,29 @@ const io = require('socket.io')(http);
 
 app.use(express.static('public'));
 
-// 현재 선택된 역할 상태를 저장하는 객체
 let roles = {
-  PIGEON: null, // 비둘기를 선택한 유저의 socket.id
-  TARGET: null  // 사람을 선택한 유저의 socket.id
+  PIGEON: null,
+  TARGET: null
 };
 
-// 현재 역할 선택 가능 상태를 모든 유저에게 방송
+let calibrated = {
+  PIGEON: false,
+  TARGET: false
+};
+
+function resetCalibration() {
+  calibrated.PIGEON = false;
+  calibrated.TARGET = false;
+}
+
+function clearAllRoles() {
+  roles.PIGEON = null;
+  roles.TARGET = null;
+  for (const s of io.of('/').sockets.values()) {
+    s.role = null;
+  }
+}
+
 function broadcastRoles() {
   io.emit('roleStatus', {
     pigeonTaken: roles.PIGEON !== null,
@@ -19,52 +35,97 @@ function broadcastRoles() {
   });
 }
 
+function broadcastCalibration() {
+  io.emit('calibrationStatus', {
+    PIGEON: calibrated.PIGEON,
+    TARGET: calibrated.TARGET
+  });
+}
+
 io.on('connection', (socket) => {
   console.log('유저 접속:', socket.id);
 
-  // 접속하자마자 현재 남은 역할 현황을 알려줌
   socket.emit('roleStatus', {
     pigeonTaken: roles.PIGEON !== null,
     targetTaken: roles.TARGET !== null
   });
+  socket.emit('calibrationStatus', {
+    PIGEON: calibrated.PIGEON,
+    TARGET: calibrated.TARGET
+  });
 
-  // 유저가 역할을 선택했을 때
   socket.on('selectRole', (role) => {
-    if (role === 'PIGEON' && !roles.PIGEON) {
-      roles.PIGEON = socket.id;
-      socket.emit('roleAssigned', 'PIGEON');
-    } else if (role === 'TARGET' && !roles.TARGET) {
-      roles.TARGET = socket.id;
-      socket.emit('roleAssigned', 'TARGET');
+    if (socket.role) {
+      socket.emit('roleAssigned', socket.role);
+      return;
     }
-    
+
+    if (role !== 'PIGEON' && role !== 'TARGET') return;
+    if (roles[role]) {
+      broadcastRoles();
+      return;
+    }
+
+    roles[role] = socket.id;
+    socket.role = role;
+    socket.emit('roleAssigned', role);
+
     broadcastRoles();
 
-    // 두 역할이 모두 선택되었다면 게임 시작(Ready) 신호 전송
     if (roles.PIGEON && roles.TARGET) {
+      resetCalibration();
+      broadcastCalibration();
       io.emit('gameReady');
     }
   });
 
-  // 게임 데이터 실시간 중계
+  socket.on('calibrationComplete', () => {
+    const role = socket.role;
+    if (!role) return;
+    if (!roles.PIGEON || !roles.TARGET) return;
+
+    calibrated[role] = true;
+    console.log(`${role} 역할 인식 완료!`);
+    broadcastCalibration();
+
+    if (calibrated.PIGEON && calibrated.TARGET) {
+      console.log('둘 다 인식 완료! 게임 동시 시작!');
+      io.emit('gameStart');
+    }
+  });
+
+  socket.on('restartToRoleSelection', () => {
+    clearAllRoles();
+    resetCalibration();
+    broadcastRoles();
+    broadcastCalibration();
+    io.emit('goRoleSelection');
+  });
+
   socket.on('hostSync', (state) => socket.broadcast.emit('gameStateUpdate', state));
   socket.on('targetSync', (data) => socket.broadcast.emit('targetDataUpdate', data));
   socket.on('faceImageSync', (base64) => socket.broadcast.emit('faceImageSync', base64));
-  
-  // 게임 종료 (승패 결정) 이벤트 중계
   socket.on('gameOverTrigger', (result) => io.emit('gameOverSync', result));
 
-  // 유저가 나갔을 때 역할 초기화 및 남은 상대방 대기실로 이동
   socket.on('disconnect', () => {
     let roleLost = false;
-    if (roles.PIGEON === socket.id) { roles.PIGEON = null; roleLost = true; }
-    if (roles.TARGET === socket.id) { roles.TARGET = null; roleLost = true; }
-    
+
+    if (roles.PIGEON === socket.id) {
+      roles.PIGEON = null;
+      roleLost = true;
+    }
+    if (roles.TARGET === socket.id) {
+      roles.TARGET = null;
+      roleLost = true;
+    }
+
     console.log('유저 퇴장:', socket.id);
-    
+
     if (roleLost) {
+      resetCalibration();
       broadcastRoles();
-      io.emit('opponentLeft'); // 남은 유저에게 상대방이 나갔음을 알림
+      broadcastCalibration();
+      io.emit('opponentLeft');
     }
   });
 });
